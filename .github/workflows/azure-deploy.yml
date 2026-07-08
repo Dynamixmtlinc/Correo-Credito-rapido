@@ -1,0 +1,80 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '22.x'
+  APP_NAME: 'cr-dynamixmtl'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Setup Node.js ─────────────────────────────────────────────────────
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      # ── 3. Instalar dependencias ─────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 4. Generar cliente Prisma ─────────────────────────────────────────────
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # ── 5. Sincronizar schema Prisma ─────────────────────────────────────────
+      - name: Sync Prisma schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma db push --skip-generate
+
+      # ── 6. Build Next.js ──────────────────────────────────────────────────────
+      - name: Build Next.js app
+        env:
+          NEXTAUTH_URL: https://${{ env.APP_NAME }}.azurewebsites.net
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          AZURE_AD_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WEBHOOK_ADMIN_EMAIL: ${{ secrets.WEBHOOK_ADMIN_EMAIL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: npm run build
+
+      # ── 7. Preparar artefacto de deploy ──────────────────────────────────────
+      - name: Prepare deployment package
+        run: |
+          cp -r .next/standalone ./deploy
+          cp -r .next/static ./deploy/.next/static
+          cp -r public ./deploy/public 2>/dev/null || true
+          echo '{"scripts":{"start":"node server.js"}}' > ./deploy/package.json
+
+      # ── 8. Login Azure ────────────────────────────────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ── 9. Deploy a App Service ───────────────────────────────────────────────
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.APP_NAME }}
+          package: ./deploy
+
+      # ── 10. Logout Azure ──────────────────────────────────────────────────────
+      - name: Azure Logout
+        if: always()
+        run: az logout

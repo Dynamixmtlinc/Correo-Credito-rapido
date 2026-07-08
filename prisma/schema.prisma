@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum EstatusFactura {
+  OUVERT
+  EN_COURS
+  APPROUVE
+  REFUSE
+  PAYE
+}
+
+enum EstatusAprobador {
+  EN_COURS
+  APPROUVE
+  REFUSE
+  VACIO
+}
+
+enum TipoDocumento {
+  PRINCIPAL
+  CREDITO
+  ADJUNTO
+}
+
+// ─── Modelos principales ──────────────────────────────────────────────────────
+
+model Factura {
+  id            String @id @default(cuid())
+
+  // ── Identificación ──
+  nombreFactura String  // No. de factura (ej: "FAC-2024-001")
+  noProjet      String  // No. de proyecto
+  srmProjet     String? // Código SRM del proyecto
+
+  // ── Relaciones catálogo ──
+  ecoleId       String
+  ecole         Ecole       @relation(fields: [ecoleId], references: [id])
+  fournisseurId String
+  fournisseur   Fournisseur @relation(fields: [fournisseurId], references: [id])
+
+  // ── Datos financieros ──
+  montant           Decimal  @db.Decimal(12, 2)
+  dateFacture       DateTime @db.Date
+  dateSaisie        DateTime @db.Date @default(now())
+  dateLimite        DateTime? @db.Date
+  indiceComptable   String?
+  affectationCredit String?
+
+  // ── Estado general ──
+  etatFacture EstatusFactura @default(OUVERT)
+
+  // ── Aprobadores (email de Azure AD) ──
+  responsableEmail       String
+  cpEmail                String?
+  regisseurEmail         String?
+  coordoEmail            String?
+  dirAdjointeEmail       String?
+  directionGeneraleEmail String?
+  cooEmail               String?
+
+  // ── Nombres de aprobadores (cache para mostrar sin llamar Graph API) ──
+  responsableNombre       String?
+  cpNombre                String?
+  regisseurNombre         String?
+  coordoNombre            String?
+  dirAdjointeNombre       String?
+  directionGeneraleNombre String?
+  cooNombre               String?
+
+  // ── Estado por aprobador ──
+  etatCP        EstatusAprobador @default(VACIO)
+  etatRegisseur EstatusAprobador @default(VACIO)
+  etatCoordo    EstatusAprobador @default(VACIO)
+  etatDirAdj    EstatusAprobador @default(VACIO)
+  etatDirGen    EstatusAprobador @default(VACIO)
+
+  // ── Verificaciones (checkboxes) ──
+  repartitionRequise   Boolean @default(false) // Répartition S9 requise
+  raisonSocialConforme Boolean @default(false)
+  dixPourcentVerifier  Boolean @default(false) // 10% à vérifier
+  fourHomologue        Boolean @default(false) // Fournisseur homologué
+  paimentRapide        Boolean @default(false)
+  affectationCreditCheck Boolean @default(false)
+
+  // ── Comentarios ──
+  commentairesResponsable String?
+  commentairesAdmin       String?
+
+  // ── Metadatos internos ──
+  bureauId  Int?
+  bureau    Bureau? @relation(fields: [bureauId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── Relaciones ──
+  documentos          Documento[]
+  adjuntosTemporal    AdjuntoTemporal[]
+  historialAprobacion HistorialAprobacion[]
+
+  @@index([etatFacture])
+  @@index([responsableEmail])
+  @@index([cpEmail])
+  @@index([regisseurEmail])
+  @@index([coordoEmail])
+  @@index([dirAdjointeEmail])
+  @@index([directionGeneraleEmail])
+  @@index([nombreFactura])
+  @@index([createdAt])
+}
+
+model Fournisseur {
+  id          String    @id @default(cuid())
+  nombre      String
+  razonSocial String?
+  homologue   Boolean   @default(false)
+  activo      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  facturas    Factura[]
+
+  @@index([nombre])
+  @@index([activo])
+}
+
+model Ecole {
+  id        String    @id @default(cuid())
+  nombre    String
+  codigo    String?   @unique
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  facturas  Factura[]
+
+  @@index([nombre])
+  @@index([activo])
+}
+
+model Documento {
+  id          String        @id @default(cuid())
+  facturaId   String
+  factura     Factura       @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  nombre      String
+  contenido   Bytes
+  contentType String        @default("application/octet-stream")
+  tamano      Int
+  tipo        TipoDocumento @default(PRINCIPAL)
+  createdAt   DateTime      @default(now())
+
+  @@index([facturaId])
+  @@index([tipo])
+}
+
+model AdjuntoTemporal {
+  id          String   @id @default(cuid())
+  idSolicitud String
+  facturaId   String?
+  factura     Factura? @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  nombre      String
+  contenido   Bytes
+  contentType String   @default("application/octet-stream")
+  tamano      Int
+  createdAt   DateTime @default(now())
+
+  @@index([idSolicitud])
+  @@index([facturaId])
+}
+
+model HistorialAprobacion {
+  id              String           @id @default(cuid())
+  facturaId       String
+  factura         Factura          @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  rolAprobador    String           // "cp" | "regisseur" | "coordo" | "dirAdj" | "dirGen" | "coo"
+  emailAprobador  String
+  nombreAprobador String?
+  decision        EstatusAprobador
+  comentario      String?
+  createdAt       DateTime         @default(now())
+
+  @@index([facturaId])
+  @@index([emailAprobador])
+}
+
+model Bureau {
+  id       Int       @id @default(autoincrement())
+  nombre   String
+  email    String    @unique
+  facturas Factura[]
+}
+
+model Version {
+  id      Int      @id @default(autoincrement())
+  version String
+  fecha   DateTime @default(now())
+  notas   String?
+}
