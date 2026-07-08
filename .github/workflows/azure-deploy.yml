@@ -9,6 +9,10 @@ env:
   NODE_VERSION: '22.x'
   APP_NAME: 'cr-dynamixmtl'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -34,41 +38,35 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      # ── 5. Sincronizar schema Prisma ─────────────────────────────────────────
-      - name: Sync Prisma schema
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx prisma db push --skip-generate
-
-      # ── 6. Build Next.js ──────────────────────────────────────────────────────
+      # ── 5. Build Next.js ──────────────────────────────────────────────────────
       - name: Build Next.js app
         env:
           NEXTAUTH_URL: https://${{ env.APP_NAME }}.azurewebsites.net
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run build
 
-      # ── 7. Preparar artefacto de deploy ──────────────────────────────────────
+      # ── 6. Preparar artefacto de deploy ──────────────────────────────────────
       - name: Prepare deployment package
         run: |
           cp -r .next/standalone ./deploy
           cp -r .next/static ./deploy/.next/static
           cp -r public ./deploy/public 2>/dev/null || true
-          echo '{"scripts":{"start":"node server.js"}}' > ./deploy/package.json
 
-      # ── 8. Login Azure ────────────────────────────────────────────────────────
+      # ── 7. Login Azure via OIDC (sin secrets en GitHub) ──────────────────────
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: b1d3a2ca-090f-4542-acde-6a244e2f1fe0
+          tenant-id: 0f0db576-1539-42df-ac92-2e8a1abbf863
+          subscription-id: 0ca5a006-cb68-4486-9544-9a291b3b9943
 
-      # ── 9. Deploy a App Service ───────────────────────────────────────────────
+      # ── 8. Deploy a App Service ───────────────────────────────────────────────
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.APP_NAME }}
           package: ./deploy
 
-      # ── 10. Logout Azure ──────────────────────────────────────────────────────
+      # ── 9. Logout Azure ──────────────────────────────────────────────────────
       - name: Azure Logout
         if: always()
         run: az logout
