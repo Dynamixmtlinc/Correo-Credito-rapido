@@ -12,8 +12,10 @@ model Factura {
   nombreFactura           String
   noProjet                String
   srmProjet               String?
-  ecoleId                 String
-  fournisseurId           String
+  // Opcionales: el PDF CertificatCR puede traerlos vacíos. Se completan luego
+  // desde la app en vez de bloquear la ingesta o inventar registros fantasma.
+  ecoleId                 String?
+  fournisseurId           String?
   montant                 Decimal               @db.Decimal(12, 2)
   dateFacture             DateTime              @db.Date
   dateSaisie              DateTime              @default(now()) @db.Date
@@ -54,8 +56,8 @@ model Factura {
   adjuntosTemporal        AdjuntoTemporal[]
   documentos              Documento[]
   bureau                  Bureau?               @relation(fields: [bureauId], references: [id])
-  ecole                   Ecole                 @relation(fields: [ecoleId], references: [id])
-  fournisseur             Fournisseur           @relation(fields: [fournisseurId], references: [id])
+  ecole                   Ecole?                @relation(fields: [ecoleId], references: [id])
+  fournisseur             Fournisseur?          @relation(fields: [fournisseurId], references: [id])
   historialAprobacion     HistorialAprobacion[]
 
   @@index([etatFacture])

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import {
   getAdminMessage,
   getMessageAttachments,
   sendAdminEmail,
 } from "@/lib/graph-app";
-import { parseFacturaEmail } from "@/lib/email-parser";
-import { storeDocumento } from "@/lib/db-storage";
-import { calcularEstatusGeneral } from "@/lib/utils";
-import { EstatusAprobador } from "@prisma/client";
+import { procesarCertificat } from "@/lib/procesar-certificat";
 
 // Solo se procesan correos de este remitente autorizado
 const REMITENTE_AUTORIZADO = "acostasalcedo.d@csdm.qc.ca";
@@ -56,7 +52,6 @@ export async function POST(req: NextRequest) {
 }
 
 async function processEmailNotification(messageId: string) {
-  const appUrl = process.env.NEXTAUTH_URL ?? "";
   let fromEmail = REMITENTE_AUTORIZADO;
 
   try {
@@ -64,181 +59,46 @@ async function processEmailNotification(messageId: string) {
     fromEmail = message.from.emailAddress.address.toLowerCase();
 
     // Ignorar correos de remitentes no autorizados
-    if (fromEmail !== REMITENTE_AUTORIZADO.toLowerCase()) {
-      return;
-    }
+    if (fromEmail !== REMITENTE_AUTORIZADO.toLowerCase()) return;
 
-    const subject = message.subject?.trim() ?? "";
+    // El PDF adjunto es la fuente de verdad: el asunto y el cuerpo del correo no
+    // contienen los datos de la factura. Sin PDF no hay nada que procesar — y no se
+    // avisa, porque el mismo remitente envía correos que no son facturas.
+    if (!message.hasAttachments) return;
 
-    // Solo procesar correos con prefijo [FACTURE]
-    if (!subject.startsWith("[FACTURE]")) return;
+    const attachments = await getMessageAttachments(messageId);
+    const pdf = attachments.find(
+      (a) =>
+        a.contentType === "application/pdf" ||
+        a.name.toLowerCase().endsWith(".pdf")
+    );
+    if (!pdf) return;
 
-    // Parsear cuerpo
-    const result = parseFacturaEmail(
-      subject,
-      message.body.content,
-      message.body.contentType
+    const result = await procesarCertificat(
+      Buffer.from(pdf.contentBytes, "base64"),
+      {
+        pdfNombre: pdf.name,
+        pdfContentType: pdf.contentType || "application/pdf",
+        responsableEmail: fromEmail,
+        fechaRecepcion: message.receivedDateTime
+          ? new Date(message.receivedDateTime)
+          : undefined,
+      }
     );
 
     if (!result.ok) {
       await sendAdminEmail({
         to: [fromEmail],
-        subject: `[ERREUR] ${subject}`,
-        bodyHtml: buildErrorHtml(subject, result.errors),
+        subject: `[ERREUR] ${message.subject ?? "Facture"}`,
+        bodyHtml: buildErrorHtml(message.subject ?? "", result.errors),
       });
       return;
     }
 
-    const { data } = result;
-
-    // Buscar école por nombre
-    const ecole = await prisma.ecole.findFirst({
-      where: {
-        nombre: { contains: data.ecoleName, mode: "insensitive" },
-        activo: true,
-      },
-    });
-    if (!ecole) {
-      await sendAdminEmail({
-        to: [fromEmail],
-        subject: `[ERREUR] ${subject}`,
-        bodyHtml: buildErrorHtml(subject, [
-          `École introuvable: "${data.ecoleName}"`,
-        ]),
-      });
-      return;
-    }
-
-    // Buscar fournisseur por nombre
-    const fournisseur = await prisma.fournisseur.findFirst({
-      where: {
-        nombre: { contains: data.fournisseurName, mode: "insensitive" },
-        activo: true,
-      },
-    });
-    if (!fournisseur) {
-      await sendAdminEmail({
-        to: [fromEmail],
-        subject: `[ERREUR] ${subject}`,
-        bodyHtml: buildErrorHtml(subject, [
-          `Fournisseur introuvable: "${data.fournisseurName}"`,
-        ]),
-      });
-      return;
-    }
-
-    // Verificar duplicado
-    const existing = await prisma.factura.findFirst({
-      where: {
-        nombreFactura: { equals: data.nombreFactura, mode: "insensitive" },
-      },
-    });
-    if (existing) {
-      await sendAdminEmail({
-        to: [fromEmail],
-        subject: `[ERREUR] ${subject}`,
-        bodyHtml: buildErrorHtml(subject, [
-          `Facture "${data.nombreFactura}" existe déjà dans le système`,
-        ]),
-      });
-      return;
-    }
-
-    // Obtener primer PDF adjunto
-    let pdfBuffer: Buffer | null = null;
-    let pdfName = "factura.pdf";
-    let pdfContentType = "application/pdf";
-
-    if (message.hasAttachments) {
-      const attachments = await getMessageAttachments(messageId);
-      const pdf = attachments.find(
-        (a) =>
-          a.contentType === "application/pdf" ||
-          a.name.toLowerCase().endsWith(".pdf")
-      );
-      if (pdf) {
-        pdfBuffer = Buffer.from(pdf.contentBytes, "base64");
-        pdfName = pdf.name;
-        pdfContentType = pdf.contentType || "application/pdf";
-      }
-    }
-
-    if (!pdfBuffer) {
-      await sendAdminEmail({
-        to: [fromEmail],
-        subject: `[ERREUR] ${subject}`,
-        bodyHtml: buildErrorHtml(subject, [
-          "Aucune pièce jointe PDF trouvée. Joignez le fichier PDF de la facture.",
-        ]),
-      });
-      return;
-    }
-
-    // Calcular estados de aprobadores
-    const etatCP = data.cpEmail ? EstatusAprobador.EN_COURS : EstatusAprobador.VACIO;
-    const etatRegisseur = data.regisseurEmail ? EstatusAprobador.EN_COURS : EstatusAprobador.VACIO;
-    const etatCoordo = data.coordoEmail ? EstatusAprobador.EN_COURS : EstatusAprobador.VACIO;
-    const etatDirAdj = data.dirAdjointeEmail ? EstatusAprobador.EN_COURS : EstatusAprobador.VACIO;
-    const etatDirGen = data.directionGeneraleEmail ? EstatusAprobador.EN_COURS : EstatusAprobador.VACIO;
-
-    const etatFacture = calcularEstatusGeneral({
-      etatCP,
-      etatRegisseur,
-      etatCoordo,
-      etatDirAdj,
-      etatDirGen,
-      cpEmail: data.cpEmail,
-      regisseurEmail: data.regisseurEmail,
-      coordoEmail: data.coordoEmail,
-      dirAdjointeEmail: data.dirAdjointeEmail,
-      directionGeneraleEmail: data.directionGeneraleEmail,
-    });
-
-    // Crear factura en DB
-    const factura = await prisma.factura.create({
-      data: {
-        nombreFactura: data.nombreFactura,
-        noProjet: data.noProjet,
-        srmProjet: data.srmProjet,
-        ecoleId: ecole.id,
-        fournisseurId: fournisseur.id,
-        montant: data.montant,
-        dateFacture: new Date(data.dateFacture),
-        dateSaisie: new Date(),
-        dateLimite: data.dateLimite ? new Date(data.dateLimite) : undefined,
-        indiceComptable: data.indiceComptable,
-        affectationCredit: data.affectationCredit,
-        responsableEmail: fromEmail,
-        cpEmail: data.cpEmail,
-        regisseurEmail: data.regisseurEmail,
-        coordoEmail: data.coordoEmail,
-        dirAdjointeEmail: data.dirAdjointeEmail,
-        directionGeneraleEmail: data.directionGeneraleEmail,
-        cooEmail: data.cooEmail,
-        etatCP,
-        etatRegisseur,
-        etatCoordo,
-        etatDirAdj,
-        etatDirGen,
-        etatFacture,
-        repartitionRequise: data.repartitionRequise,
-        raisonSocialConforme: data.raisonSocialConforme,
-        dixPourcentVerifier: data.dixPourcentVerifier,
-        fourHomologue: data.fourHomologue,
-        paimentRapide: data.paimentRapide,
-        affectationCreditCheck: data.affectationCreditCheck,
-        commentairesResponsable: data.commentairesResponsable,
-      },
-    });
-
-    // Guardar PDF en base de datos
-    await storeDocumento(factura.id, pdfName, pdfBuffer, pdfContentType);
-
-    // Notificar éxito al remitente
     await sendAdminEmail({
       to: [fromEmail],
-      subject: `[CRÉÉE] Facture ${data.nombreFactura}`,
-      bodyHtml: buildSuccessHtml(data.nombreFactura, factura.id, appUrl),
+      subject: `[${result.creada ? "CRÉÉE" : "MISE À JOUR"}] Facture ${result.nombreFactura}`,
+      bodyHtml: buildSuccessHtml(result.nombreFactura, result.creada, result.warnings),
     });
   } catch (err) {
     console.error("[webhook/correo] Error:", err);
@@ -256,6 +116,12 @@ async function processEmailNotification(messageId: string) {
   }
 }
 
+/** URL pública que el fournisseur usa para répondre. Debe ser deducible a la main. */
+function urlFacture(nombreFactura: string): string {
+  const base = process.env.NEXTAUTH_URL ?? "";
+  return `${base}/facture/${encodeURIComponent(nombreFactura)}`;
+}
+
 function buildErrorHtml(subject: string, errors: string[]): string {
   const titre = subject
     ? `Le traitement du courriel <strong>${subject}</strong> a échoué :`
@@ -263,7 +129,7 @@ function buildErrorHtml(subject: string, errors: string[]): string {
   return `
     <p>${titre}</p>
     <ul style="color:#b91c1c">${errors.map((e) => `<li>${e}</li>`).join("")}</ul>
-    <p>Corrigez les informations et renvoyez le courriel à <a href="mailto:${process.env.WEBHOOK_ADMIN_EMAIL}">${process.env.WEBHOOK_ADMIN_EMAIL}</a>.</p>
+    <p>Corrigez le document et renvoyez le courriel à <a href="mailto:${process.env.WEBHOOK_ADMIN_EMAIL}">${process.env.WEBHOOK_ADMIN_EMAIL}</a>.</p>
     <hr/>
     <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>
   `;
@@ -271,13 +137,25 @@ function buildErrorHtml(subject: string, errors: string[]): string {
 
 function buildSuccessHtml(
   nombreFactura: string,
-  facturaId: string,
-  appUrl: string
+  creada: boolean,
+  warnings: string[]
 ): string {
-  const link = `${appUrl}/facturas/${facturaId}`;
+  const link = urlFacture(nombreFactura);
+  const verbe = creada ? "a été créée" : "a été mise à jour";
+
+  const avis =
+    warnings.length > 0
+      ? `<p style="margin-top:16px"><strong>À vérifier :</strong></p>
+         <ul style="color:#b45309;font-size:13px">${warnings
+           .map((w) => `<li>${w}</li>`)
+           .join("")}</ul>`
+      : "";
+
   return `
-    <p>La facture <strong>${nombreFactura}</strong> a été créée avec succès dans le système.</p>
-    <p><a href="${link}" style="background:#2563eb;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none">Voir la facture</a></p>
+    <p>La facture <strong>${nombreFactura}</strong> ${verbe} dans le système.</p>
+    <p style="margin-top:16px">Lien à transmettre au fournisseur :</p>
+    <p><a href="${link}">${link}</a></p>
+    ${avis}
     <hr/>
     <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>
   `;
