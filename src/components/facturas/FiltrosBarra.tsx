@@ -51,6 +51,22 @@ export function FiltrosBarra({ filtros, onChange, total, onRefresh }: FiltrosBar
         ))}
       </select>
 
+      {/* Filtro respuesta del proveedor */}
+      <select
+        value={filtros.reponse ?? ""}
+        onChange={(e) =>
+          onChange({
+            reponse: (e.target.value as FiltrosFactura["reponse"]) || undefined,
+            page: 1,
+          })
+        }
+        className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-csdm-blue focus:border-transparent bg-white"
+      >
+        <option value="">Fournisseur : tous</option>
+        <option value="attente">En attente de réponse</option>
+        <option value="repondu">Déjà répondu</option>
+      </select>
+
       {/* Botón actualizar */}
       <button
         onClick={onRefresh}

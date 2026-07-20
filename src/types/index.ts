@@ -54,8 +54,15 @@ export type FacturaResumen = Pick<
   | "dateLimite"
   | "createdAt"
 > & {
-  ecole: Pick<Ecole, "id" | "nombre">;
-  fournisseur: Pick<Fournisseur, "id" | "nombre">;
+  // Nulos cuando la factura entró por correo y el PDF no traía el dato.
+  ecole: Pick<Ecole, "id" | "nombre"> | null;
+  fournisseur: Pick<Fournisseur, "id" | "nombre"> | null;
+  // Respuesta del proveedor desde la página pública, si ya la dio.
+  respuestaFournisseur?: {
+    decision: EstatusAprobador;
+    comentario: string | null;
+    createdAt: Date | string;
+  } | null;
 };
 
 // Payload para crear factura
@@ -115,6 +122,8 @@ export interface FiltrosFactura {
   busqueda?: string;
   etat?: EstatusFactura;
   aprobadorEmail?: string;
+  /** Filtra por si el proveedor ya respondió desde la página pública. */
+  reponse?: "attente" | "repondu";
   page?: number;
   pageSize?: number;
 }

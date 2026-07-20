@@ -16,7 +16,7 @@ export function EmailComposer({ factura, onClose }: EmailComposerProps) {
   const [ccInput, setCcInput] = useState("");
   const [subject, setSubject] = useState(`Facture ${factura.nombreFactura} — Projet ${factura.noProjet}`);
   const [body, setBody] = useState(
-    `Bonjour,\n\nVeuillez trouver ci-joint les informations de la facture:\n\n• No. Facture: ${factura.nombreFactura}\n• Projet: ${factura.noProjet}\n• Fournisseur: ${factura.fournisseur.nombre}\n• Montant: ${Number(factura.montant).toLocaleString("fr-CA", { style: "currency", currency: "CAD" })}\n\nCordialement,`
+    `Bonjour,\n\nVeuillez trouver ci-joint les informations de la facture:\n\n• No. Facture: ${factura.nombreFactura}\n• Projet: ${factura.noProjet}\n• Fournisseur: ${factura.fournisseur?.nombre ?? "—"}\n• Montant: ${Number(factura.montant).toLocaleString("fr-CA", { style: "currency", currency: "CAD" })}\n\nCordialement,`
   );
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);

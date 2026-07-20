@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { storeDocumento } from "@/lib/db-storage";
 import { requireAuth, apiError } from "@/lib/api-helpers";
 import { calcularEstatusGeneral } from "@/lib/utils";
+import { ROL_FOURNISSEUR } from "@/lib/procesar-certificat";
 import { EstatusAprobador, EstatusFactura, Prisma } from "@prisma/client";
 import type { CrearFacturaPayload, FiltrosFactura } from "@/types";
 
@@ -30,6 +31,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (etat) where.etatFacture = etat;
+
+  // Facturas que esperan la respuesta del proveedor desde la página pública.
+  const reponse = searchParams.get("reponse");
+  if (reponse === "attente") {
+    where.historialAprobacion = { none: { rolAprobador: ROL_FOURNISSEUR } };
+  } else if (reponse === "repondu") {
+    where.historialAprobacion = { some: { rolAprobador: ROL_FOURNISSEUR } };
+  }
 
   if (aprobadorEmail) {
     where.OR = [
@@ -81,12 +90,23 @@ export async function GET(req: NextRequest) {
         createdAt: true,
         ecole: { select: { id: true, nombre: true } },
         fournisseur: { select: { id: true, nombre: true } },
+        historialAprobacion: {
+          where: { rolAprobador: ROL_FOURNISSEUR },
+          select: { decision: true, comentario: true, createdAt: true },
+          take: 1,
+        },
       },
     }),
   ]);
 
+  // Se aplana a `respuestaFournisseur` para que la UI no manipule el historial.
+  const data = facturas.map(({ historialAprobacion, ...f }) => ({
+    ...f,
+    respuestaFournisseur: historialAprobacion[0] ?? null,
+  }));
+
   return NextResponse.json({
-    data: facturas,
+    data,
     total,
     page,
     pageSize,

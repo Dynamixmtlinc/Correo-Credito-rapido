@@ -77,8 +77,8 @@ export function FacturaDetalle({ facturaResumen, onClose, onEdit, onEmail }: Fac
           <div className="flex-1 p-5 space-y-5">
             {/* Datos principales */}
             <div className="grid grid-cols-2 gap-3">
-              <InfoField label="École" value={facturaResumen.ecole.nombre} />
-              <InfoField label="Fournisseur" value={facturaResumen.fournisseur.nombre} />
+              <InfoField label="École" value={facturaResumen.ecole?.nombre ?? "—"} />
+              <InfoField label="Fournisseur" value={facturaResumen.fournisseur?.nombre ?? "—"} />
               <InfoField label="Montant" value={formatMonto(Number(facturaResumen.montant))} highlight />
               <InfoField label="Date de facture" value={formatDate(facturaResumen.dateFacture)} />
               <InfoField label="Date de saisie" value={formatDate(facturaResumen.dateSaisie)} />

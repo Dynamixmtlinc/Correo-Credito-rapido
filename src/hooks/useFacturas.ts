@@ -6,6 +6,7 @@ async function fetchFacturas(filtros: FiltrosFactura): Promise<PaginatedResponse
   if (filtros.busqueda) params.set("busqueda", filtros.busqueda);
   if (filtros.etat) params.set("etat", filtros.etat);
   if (filtros.aprobadorEmail) params.set("aprobador", filtros.aprobadorEmail);
+  if (filtros.reponse) params.set("reponse", filtros.reponse);
   if (filtros.page) params.set("page", String(filtros.page));
   if (filtros.pageSize) params.set("pageSize", String(filtros.pageSize));
 
