@@ -1,0 +1,68 @@
+name: Renouveler la souscription Graph
+
+# Les souscriptions Graph aux courriels expirent au bout de ~3 jours. Sans ce
+# renouvellement, l'ingestion des factures s'arrête d'elle-même et en silence.
+# On tourne tous les jours : deux occasions de renouveler avant l'expiration,
+# et le script recrée la souscription si elle a déjà expiré.
+on:
+  schedule:
+    - cron: "0 6 * * *" # tous les jours à 06:00 UTC
+  workflow_dispatch: # déclenchement manuel
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: renouveler-souscription
+  cancel-in-progress: false
+
+jobs:
+  renouveler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+
+      # Même identité fédérée que le déploiement : aucun secret dans GitHub.
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: b1d3a2ca-090f-4542-acde-6a244e2f1fe0
+          tenant-id: 0f0db576-1539-42df-ac92-2e8a1abbf863
+          subscription-id: 0ca5a006-cb68-4486-9544-9a291b3b9943
+
+      # Les identifiants vivent dans les app settings de l'App Service, pas ici.
+      - name: Lire la configuration depuis l'App Service
+        run: |
+          set -euo pipefail
+          SETTINGS=$(az webapp config appsettings list \
+            -g rg-creditrapide -n cr-dynamixmtl -o json)
+
+          lire() {
+            echo "$SETTINGS" | jq -r --arg k "$1" '.[] | select(.name==$k) | .value'
+          }
+
+          for CLE in AZURE_AD_TENANT_ID AZURE_AD_CLIENT_ID AZURE_AD_CLIENT_SECRET \
+                     WEBHOOK_ADMIN_EMAIL WEBHOOK_SECRET NEXTAUTH_URL; do
+            VALEUR=$(lire "$CLE")
+            if [ -z "$VALEUR" ] || [ "$VALEUR" = "null" ]; then
+              echo "::error::App setting manquant : $CLE"
+              exit 1
+            fi
+            # Masqué dans les logs avant d'être exporté.
+            echo "::add-mask::$VALEUR"
+            echo "$CLE=$VALEUR" >> "$GITHUB_ENV"
+          done
+
+      - name: Renouveler
+        run: node scripts/renouveler-souscription.mjs
+
+      - name: Azure Logout
+        if: always()
+        run: az logout
