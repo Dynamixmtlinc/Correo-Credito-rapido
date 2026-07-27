@@ -263,9 +263,9 @@ Prioridad media:
 5-bis. **Los fallos de ingesta no dejan rastro en la app**: solo se envía un correo a
    acostasalcedo. Hace falta registrar los intentos (éxito/fallo + motivo) en algún sitio
    consultable, o el próximo fallo también lo descubrirá el cliente.
-5-ter. **Graph puede notificar el mismo mensaje más de una vez** (el 2026-07-27 salieron dos
-   correos de error en el mismo segundo). Hoy no rompe nada porque `procesarCertificat()` es
-   idempotente, pero conviene confirmarlo y, si se repite, deduplicar por `messageId`.
+5-ter. ~~Graph notifica dos veces~~ → **descartado el 2026-07-27.** Los correos duplicados no
+   eran notificaciones repetidas sino el bug del 202 de `sendMail` (ver Lecciones). Verificado
+   tras el fix: una notificación → **un solo correo**. No hace falta deduplicar por `messageId`.
 6. Limpiar el schema: quitar `User/Account/Session/VerificationToken` (huérfanas tras eliminar
    PrismaAdapter) y decidir si se borra `src/lib/azure-blob.ts` o se migra a Blob.
 7. Estrategia de migraciones: hoy `prisma/migrations/` está gitignoreado. Decidir si se versiona

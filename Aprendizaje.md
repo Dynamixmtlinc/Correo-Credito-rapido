@@ -532,6 +532,9 @@ el problema resultó no ser de negocio ni de Graph, sino de **empaquetado del bu
    `/facture/Now2707_31758` sirve la factura completa** (123,00 $, projet 321, cadena de
    aprobadores, formulario de respuesta). Antes decía `pas encore disponible`.
 7. ✅ Corregido el segundo bug descubierto al verificar (P31): `graphAppFetch` y el 202 vacío.
+   Desplegado (commit `7f4c5cb`, run 30288667879) y **verificado en producción**: al reprocesar
+   de nuevo salió `[MISE À JOUR] Facture Now2707_31758` (17:23:14Z) **sin** ningún
+   `[ERREUR SYSTÈME]` detrás. Una notificación → un solo correo.
 
 ## Riesgos y cómo se mitigan
 
