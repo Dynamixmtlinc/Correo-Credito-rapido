@@ -249,6 +249,31 @@ function extraerCadena(filas: Row[]): AprobadorCertificat[] {
   return resultado;
 }
 
+/**
+ * Carga el worker de pdfjs **dentro del bundle** y lo deja en `globalThis.pdfjsWorker`.
+ *
+ * En Node, pdfjs monta siempre un "fake worker" (no hay Web Workers) y para ello importa
+ * `"./pdf.worker.mjs"` con la marca `webpackIgnore`. Esa marca sobrevive al
+ * build de Next: el chunk compilado busca un `pdf.worker.mjs` hermano suyo en
+ * `.next/server/chunks/`, que no existe → en producción todo PDF fallaba con
+ *   `Setting up fake worker failed: "Cannot find module …/chunks/pdf.worker.mjs"`.
+ * En local no se notaba porque ahí el módulo se resuelve desde `node_modules`.
+ *
+ * pdfjs mira primero `globalThis.pdfjsWorker?.WorkerMessageHandler`: al rellenarlo con
+ * un import normal (sin `webpackIgnore`) el bundler sí incluye el worker y el import
+ * dinámico problemático nunca llega a ejecutarse.
+ *
+ * Idempotente y de una sola vez por proceso: pdfjs memoriza el resultado del primer
+ * intento, así que hay que dejarlo puesto **antes** del primer `getDocument()`.
+ */
+type GlobalConWorker = typeof globalThis & { pdfjsWorker?: unknown };
+
+async function precargarWorker(): Promise<void> {
+  const g = globalThis as GlobalConWorker;
+  if (g.pdfjsWorker) return;
+  g.pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+}
+
 export async function parseCertificat(buffer: Buffer): Promise<CertificatResult> {
   let items: Item[];
   let dossierUrl: string | undefined;
@@ -256,6 +281,8 @@ export async function parseCertificat(buffer: Buffer): Promise<CertificatResult>
   try {
     // Import dinámico: pdfjs es ESM y pesado, solo se carga al procesar un correo.
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    await precargarWorker();
+
     const doc = await pdfjs.getDocument({
       data: new Uint8Array(buffer),
       useSystemFonts: true,

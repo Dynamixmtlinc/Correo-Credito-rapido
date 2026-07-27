@@ -30,7 +30,20 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-07-20)
+## Estado actual (2026-07-27)
+
+**Primer correo real recibido — y descubrió que la ingesta nunca funcionó en el servidor.**
+
+- ✅ **La cadena Graph → webhook funciona**: el 2026-07-27 a las 16:53:44Z entró el correo de
+  acostasalcedo (`SRM_Projet 321 / . / Now2707_31758`) y la app reaccionó en 3 segundos.
+- ❌ **Pero el parseo del PDF reventaba en producción**: `pdfjs` no encontraba su worker dentro
+  del bundle de Next (ver Lecciones). Las 2 facturas históricas existían solo porque el backfill
+  se corrió **en local**. → Corregido con `precargarWorker()` en `certificat-parser.ts`.
+- ✅ El PDF nuevo parsea sin tocar el parser (`Now2707_31758`, 123 $, cadena de 5 aprobadores).
+- ⏳ Falta desplegar el fix y reprocesar ese mensaje para que la factura se cree de verdad.
+- Diagnóstico completo en [`Aprendizaje.md`](Aprendizaje.md) § Objetivo 3.
+
+## Estado anterior (2026-07-20)
 
 **El circuito completo está vivo en producción por primera vez.**
 
@@ -155,6 +168,24 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   genera Chromium (Skia/PDF) con capa de texto estable; se parsea **por posición (x/y)** en
   `src/lib/certificat-parser.ts`. Por orden de líneas NO funciona: un campo vacío (p. ej.
   `ÉCOLE`) hace desaparecer su línea de valor y desalinea todo en silencio.
+- **`pdfjs` no encuentra su worker dentro del bundle de Next — y solo falla en producción.**
+  En Node no hay Web Workers, así que pdfjs monta un *fake worker* en el hilo principal, pero
+  para ello importa `"./pdf.worker.mjs"` marcado con `webpackIgnore`. El bundler respeta la
+  marca, así que tras `next build` el chunk `.next/server/chunks/301.js` busca un
+  `pdf.worker.mjs` hermano suyo que no existe → **todo PDF fallaba** con
+  `Setting up fake worker failed: "Cannot find module …/chunks/pdf.worker.mjs"`.
+  En local nunca se ve (se resuelve desde `node_modules`), y por eso el backfill del 2026-07-20
+  funcionó mientras el servidor llevaba semanas roto en silencio.
+  **Fix (2026-07-27):** `precargarWorker()` en `certificat-parser.ts` deja el worker en
+  `globalThis.pdfjsWorker` con un import normal — pdfjs consulta ese global **antes** del import
+  dinámico, y de paso el bundler sí incluye el worker (chunk `159.js`).
+  **Lección de método:** `tsc` y `next build` pasaron en verde con la ingesta rota. Toda librería
+  que cargue archivos hermanos en runtime hay que verificarla **sobre `.next/`**, no compilando.
+- **Cuando la ingesta falla, el único que se entera es el cliente.** El webhook avisa por correo
+  a acostasalcedo (`[ERREUR]` / `[ERREUR SYSTÈME]`) y no deja rastro en la app. Al diagnosticar
+  un "no aparece la factura", **el primer sitio donde mirar es `sentitems` del buzón admin**:
+  ahí está el mensaje de error exacto, con fecha. Fue lo que resolvió el caso del 2026-07-27 en
+  minutos.
 - **Hacer un campo nullable en Prisma no propaga al tipo escrito a mano.** Al volver
   `ecoleId`/`fournisseurId` opcionales, `FacturaResumen` seguía declarando `ecole` como no-nulo:
   el typecheck pasaba en verde y 4 accesos (`f.ecole.nombre`) habrían reventado en runtime.
@@ -212,6 +243,12 @@ Prioridad alta:
    reales sí lo traen), pero es una trampa esperando.
 
 Prioridad media:
+5-bis. **Los fallos de ingesta no dejan rastro en la app**: solo se envía un correo a
+   acostasalcedo. Hace falta registrar los intentos (éxito/fallo + motivo) en algún sitio
+   consultable, o el próximo fallo también lo descubrirá el cliente.
+5-ter. **Graph puede notificar el mismo mensaje más de una vez** (el 2026-07-27 salieron dos
+   correos de error en el mismo segundo). Hoy no rompe nada porque `procesarCertificat()` es
+   idempotente, pero conviene confirmarlo y, si se repite, deduplicar por `messageId`.
 6. Limpiar el schema: quitar `User/Account/Session/VerificationToken` (huérfanas tras eliminar
    PrismaAdapter) y decidir si se borra `src/lib/azure-blob.ts` o se migra a Blob.
 7. Estrategia de migraciones: hoy `prisma/migrations/` está gitignoreado. Decidir si se versiona

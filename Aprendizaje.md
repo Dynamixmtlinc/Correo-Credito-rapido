@@ -391,3 +391,128 @@ Hay que fijarla y no cambiarla nunca (acostasalcedo la escribe a mano). Propuest
 ### P26 — ¿Qué ve el proveedor de la factura? · ⏸ Bloqueada
 ¿Todos los datos del PDF, o solo un subconjunto? Importa por confidencialidad, dado que la URL
 es adivinable.
+
+---
+
+# Objetivo 3 — El primer correo real no generó factura (2026-07-27)
+
+**Necesidad declarada por el usuario:** llegó un correo nuevo de `acostasalcedo` al buzón de
+`admin@dynamixmtl.com`, pero en la plataforma **no apareció ninguna línea nueva** con esa
+factura, y por tanto tampoco se puede abrir su página pública.
+
+**Rol asumido:** ingeniero de plataforma / *build & runtime* de Next.js en Azure App Service —
+el problema resultó no ser de negocio ni de Graph, sino de **empaquetado del bundle**.
+
+## Progreso
+
+- **% de información para el objetivo: 100%** — causa raíz identificada, reproducida y
+  corregida; el arreglo está verificado sobre el bundle compilado.
+
+## Fuentes consultadas (2026-07-27)
+
+| Fuente | Qué aportó |
+|---|---|
+| `gh run list --workflow=renouveler-souscription.yml` | La renovación corrió **OK hoy a las 10:00 UTC**. Descarta suscripción muerta. |
+| Graph `/subscriptions` (app-only) | Suscripción `11e745f3-…` **viva**, apunta a nuestro webhook, expira 2026-07-30. |
+| Graph `inbox/messages` de `admin@dynamixmtl.com` | El correo **sí llegó**: 2026-07-27T16:53:44Z, de `acostasalcedo.d@csdm.qc.ca`, asunto `SRM_Projet 321 / . / Now2707_31758 ,Crédit Rapide`, `hasAttachments=true`. |
+| Graph `sentitems` | La app **respondió en 3 segundos** con `[ERREUR]` + `[ERREUR SYSTÈME]` a acostasalcedo. |
+| Cuerpo del `[ERREUR]` | El mensaje exacto del fallo (ver P27). |
+| `CertificatCR.pdf` descargado del correo | Parseado en local → **datos perfectos** (ver P28). |
+| `node_modules/pdfjs-dist/legacy/build/pdf.mjs` | El mecanismo del *fake worker* y su escotilla de escape (ver P29). |
+
+## Preguntas y respuestas
+
+### P27 — ¿Por qué no se creó la factura? · ✅ Resuelta
+- **Por qué importa:** es el primer correo real que atraviesa la suscripción de Graph; sin la
+  causa exacta no se puede saber si falla la ingesta, el parser o la base.
+- **Respuesta:** **la cadena entera funcionó salvo el último paso.** Graph notificó, el webhook
+  se ejecutó, el remitente y el PDF pasaron los filtros, y `parseCertificat()` falló con:
+
+  > `PDF illisible: Setting up fake worker failed: "Cannot find module`
+  > `'/home/site/wwwroot/.next/server/chunks/pdf.worker.mjs' imported from`
+  > `/home/site/wwwroot/.next/server/chunks/301.js"`
+
+  Es decir: **la ingesta por correo nunca había funcionado en el servidor**. Las 2 facturas
+  históricas se cargaron con `scripts/backfill-courriels.mts` ejecutado **en local**, donde
+  `pdfjs` se resuelve desde `node_modules` y el worker sí existe. Producción nunca había
+  parseado un PDF. (Fuente: cuerpo del correo `[ERREUR]` + `git log`.)
+
+### P28 — ¿El PDF nuevo es parseable, o cambió de formato? · ✅ Resuelta
+- **Por qué importa:** si además hubiera cambiado la plantilla, el arreglo del worker no
+  bastaría.
+- **Respuesta:** **el PDF es perfecto para el parser actual.** Ejecutado `parseCertificat()` en
+  local sobre el adjunto real: `ok: true`, `nombreFactura: "Now2707_31758"`, `projet: "321"`,
+  `montantTotal: 123`, `montantAPayer: 100`, `dateFacture: 2026-07-15`,
+  `dateSaisie: 2026-07-18`, `paiementRapide: true`, `exigeCredit: true`, `dossierUrl` de
+  SharePoint, y la cadena de 5 aprobadores con Chargé de projet (Pageau Vincent) y Régisseur
+  (Acosta Salcedo) rellenos. Único warning: `Fournisseur absent dans le PDF` (el campo viene
+  como `.`, como en las muestras anteriores). (Fuente: ejecución local del parser.)
+
+### P29 — ¿Por qué falta `pdf.worker.mjs` solo en producción? · ✅ Resuelta
+- **Por qué importa:** determina si el arreglo es de configuración, de despliegue o de código.
+- **Respuesta:** en Node no hay Web Workers, así que `pdfjs` monta siempre un **"fake worker"**
+  en el hilo principal — pero para ello **importa igualmente** el módulo del worker:
+
+  ```js
+  // pdfjs-dist/legacy/build/pdf.mjs
+  if (isNodeJS) { GlobalWorkerOptions.workerSrc ||= "./pdf.worker.mjs"; }
+  ...
+  const worker = await import(/* webpackIgnore: true */ this.workerSrc);
+  ```
+
+  La marca `webpackIgnore` hace que **el bundler no toque ese import**. Tras `next build`,
+  `pdf.mjs` acaba dentro de `.next/server/chunks/301.js`, y ese `"./pdf.worker.mjs"` relativo
+  pasa a resolverse contra `.next/server/chunks/` — donde no hay ningún worker. En local nunca
+  se ve porque el módulo se carga desde `node_modules`. (Fuente: código de `pdf.mjs`.)
+
+### P30 — ¿Cuál es el arreglo correcto? · ✅ Resuelta
+- **Por qué importa:** hay tres caminos posibles y solo uno no depende del empaquetado.
+- **Respuesta:** `pdfjs` consulta **primero** `globalThis.pdfjsWorker?.WorkerMessageHandler`
+  antes de intentar el import dinámico. Basta con rellenarlo con un import **normal** (sin
+  `webpackIgnore`), que el bundler sí sigue:
+
+  ```ts
+  globalThis.pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  ```
+
+  Implementado como `precargarWorker()` en `src/lib/certificat-parser.ts`, llamado justo antes
+  del primer `getDocument()`. Descartadas las alternativas: `serverExternalPackages:
+  ["pdfjs-dist"]` depende de que el *file tracing* de `output: "standalone"` arrastre un
+  archivo al que nadie importa estáticamente, y copiar el worker a mano en el workflow es
+  frágil ante cualquier cambio de rutas de Next.
+
+  **Verificado sobre el bundle compilado** (no solo por typecheck):
+  - `chunks/0.js` → `e.pdfjsWorker || (e.pdfjsWorker = await r.e(159).then(...))`
+  - `chunks/159.js` → `var s = globalThis.pdfjsWorker = {}; r.d(s,{WorkerMessageHandler:…})`
+  - `chunks/301.js` → `globalThis.pdfjsWorker?.WorkerMessageHandler || null` ← lo encuentra
+  - `.next/standalone/.next/server/chunks/159.js` existe ⇒ viaja en el paquete de despliegue.
+
+### P31 — ¿Por qué se enviaron DOS correos de error? · ❓ Abierta
+- **Por qué importa:** `[ERREUR]` y `[ERREUR SYSTÈME]` salieron **en el mismo segundo**
+  (16:53:47Z), y el código hace `return` tras el primero — un solo paso por
+  `processEmailNotification()` no puede emitir los dos.
+- **Hipótesis:** Graph entrega las notificaciones **al menos una vez**, así que probablemente
+  hubo dos POST para el mismo mensaje; el segundo habría fallado antes del parser (p. ej. un
+  429 de Graph al releer el mensaje) y cayó en el `catch` genérico. No es la causa del problema
+  y no bloquea, pero **conviene confirmarlo tras el arreglo**: si se repite, el riesgo real es
+  el procesamiento duplicado (hoy amortiguado porque `procesarCertificat()` es idempotente).
+
+## Plan de solución
+
+1. ✅ Confirmar que el correo llegó y que la suscripción vive → sí a ambas.
+2. ✅ Leer el error real que la propia app envió por correo → `fake worker`.
+3. ✅ Comprobar que el PDF nuevo parsea bien en local → sí, sin tocar el parser.
+4. ✅ Precargar el worker en `globalThis.pdfjsWorker` y verificar sobre el bundle.
+5. ⏳ Desplegar a producción (push a `main` → GitHub Actions).
+6. ⏳ Reprocesar el mensaje ya recibido para que la factura `Now2707_31758` se cree, y
+   comprobar que llega el correo `[CRÉÉE]` con el enlace `/facture/Now2707_31758`.
+
+## Riesgos y cómo se mitigan
+
+- **El fallo era invisible para el usuario**: la app avisó por correo a acostasalcedo, no a la
+  plataforma ni a nadie del equipo técnico. Mientras no haya un registro de ingestas fallidas
+  en la propia app, un error así solo se detecta preguntando al cliente. → Candidato claro para
+  `PROPUESTAS.md`.
+- **El bundle es el punto ciego**: `tsc` y `next build` pasaron en verde durante semanas con
+  la ingesta rota. Cualquier librería que use `webpackIgnore` o cargue archivos hermanos en
+  runtime merece verificarse **sobre `.next/`**, no solo compilando.
