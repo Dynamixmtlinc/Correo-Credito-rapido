@@ -487,15 +487,38 @@ el problema resultó no ser de negocio ni de Graph, sino de **empaquetado del bu
   - `chunks/301.js` → `globalThis.pdfjsWorker?.WorkerMessageHandler || null` ← lo encuentra
   - `.next/standalone/.next/server/chunks/159.js` existe ⇒ viaja en el paquete de despliegue.
 
-### P31 — ¿Por qué se enviaron DOS correos de error? · ❓ Abierta
+### P31 — ¿Por qué se enviaron DOS correos de error? · ✅ Resuelta
 - **Por qué importa:** `[ERREUR]` y `[ERREUR SYSTÈME]` salieron **en el mismo segundo**
   (16:53:47Z), y el código hace `return` tras el primero — un solo paso por
   `processEmailNotification()` no puede emitir los dos.
-- **Hipótesis:** Graph entrega las notificaciones **al menos una vez**, así que probablemente
-  hubo dos POST para el mismo mensaje; el segundo habría fallado antes del parser (p. ej. un
-  429 de Graph al releer el mensaje) y cayó en el `catch` genérico. No es la causa del problema
-  y no bloquea, pero **conviene confirmarlo tras el arreglo**: si se repite, el riesgo real es
-  el procesamiento duplicado (hoy amortiguado porque `procesarCertificat()` es idempotente).
+- **Hipótesis inicial (descartada):** notificación duplicada de Graph. La descartó el propio
+  arreglo: al reprocesar **una sola** notificación salieron `[CRÉÉE]` **y** `[ERREUR SYSTÈME]`
+  a la misma hora (17:15:19Z). Un envío correcto no puede producir un error… salvo que el
+  error llegue **después** de enviar.
+- **Respuesta — es un segundo bug, independiente:** `sendMail` de Graph contesta **202 con el
+  cuerpo vacío**, y `graphAppFetch()` solo trataba el **204** como "sin cuerpo":
+
+  ```ts
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;   // ← 202 + cuerpo vacío ⇒ SyntaxError
+  ```
+
+  Es decir: **cada `sendAdminEmail()` enviaba el correo y acto seguido lanzaba.** En el webhook
+  ese throw cae en el `catch` general → `[ERREUR SYSTÈME]` al remitente detrás de **cada correo
+  bueno**. Por eso el patrón se repite en las 4 tandas del día.
+  En `facture/[numero]/repondre` y `facturas/[id]/aprobar` el mismo fallo era mudo: llaman con
+  `.catch(console.error)`, así que el correo salía y el error solo iba al log.
+- **Fix:** decidir por el cuerpo y no por el código de estado —
+  `const t = await res.text(); return (t ? JSON.parse(t) : undefined) as T;`
+  (Fuente: `sentitems` de Graph + `src/lib/graph-app.ts`.)
+
+### P32 — ¿Por qué llegan dos correos por tanda? · ✅ Resuelta
+- **Por qué importa:** parecía otra señal de notificaciones duplicadas.
+- **Respuesta:** no lo es. acostasalcedo envía **dos correos seguidos**: uno de asunto
+  `prueba de correo a proveedor` **sin adjunto** (17:07:39, 17:09:59) y el del certificat
+  **con adjunto** (17:07:41, 17:10:01). El webhook ignora el primero en silencio —
+  comportamiento deseado y ya documentado: el mismo remitente manda correos que no son
+  facturas. (Fuente: `inbox` de Graph.)
 
 ## Plan de solución
 
@@ -503,9 +526,12 @@ el problema resultó no ser de negocio ni de Graph, sino de **empaquetado del bu
 2. ✅ Leer el error real que la propia app envió por correo → `fake worker`.
 3. ✅ Comprobar que el PDF nuevo parsea bien en local → sí, sin tocar el parser.
 4. ✅ Precargar el worker en `globalThis.pdfjsWorker` y verificar sobre el bundle.
-5. ⏳ Desplegar a producción (push a `main` → GitHub Actions).
-6. ⏳ Reprocesar el mensaje ya recibido para que la factura `Now2707_31758` se cree, y
-   comprobar que llega el correo `[CRÉÉE]` con el enlace `/facture/Now2707_31758`.
+5. ✅ Desplegado a producción (commit `ff164e9`, run 30288008054, 2026-07-27T17:14Z).
+6. ✅ Reprocesado el mensaje ya recibido reenviando al webhook la misma notificación que manda
+   Graph. Resultado: correo `[CRÉÉE] Facture Now2707_31758` y **la página pública
+   `/facture/Now2707_31758` sirve la factura completa** (123,00 $, projet 321, cadena de
+   aprobadores, formulario de respuesta). Antes decía `pas encore disponible`.
+7. ✅ Corregido el segundo bug descubierto al verificar (P31): `graphAppFetch` y el 202 vacío.
 
 ## Riesgos y cómo se mitigan
 

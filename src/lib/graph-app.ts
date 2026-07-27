@@ -47,8 +47,13 @@ async function graphAppFetch<T>(path: string, options?: RequestInit): Promise<T>
     throw new Error(`Graph API error ${res.status}: ${error}`);
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // No todas las respuestas de Graph traen JSON: `sendMail` contesta **202 con cuerpo
+  // vacío**. Al hacer `res.json()` sobre un cuerpo vacío se lanza un SyntaxError, así
+  // que el llamador daba por fallado un envío que **sí había salido** — el webhook
+  // enviaba entonces un `[ERREUR SYSTÈME]` al remitente justo después de cada correo
+  // correcto, incluido el de `[CRÉÉE]`. Se decide por el cuerpo, no por el código.
+  const texto = await res.text();
+  return (texto ? JSON.parse(texto) : undefined) as T;
 }
 
 export interface GraphMessage {

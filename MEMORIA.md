@@ -40,7 +40,14 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   del bundle de Next (ver Lecciones). Las 2 facturas históricas existían solo porque el backfill
   se corrió **en local**. → Corregido con `precargarWorker()` en `certificat-parser.ts`.
 - ✅ El PDF nuevo parsea sin tocar el parser (`Now2707_31758`, 123 $, cadena de 5 aprobadores).
-- ⏳ Falta desplegar el fix y reprocesar ese mensaje para que la factura se cree de verdad.
+- ✅ **Desplegado y reprocesado**: la factura `Now2707_31758` existe y su página pública
+  `/facture/Now2707_31758` sirve todos los datos + el formulario de respuesta del proveedor.
+  **El circuito correo → factura → página pública está ejercido de punta a punta por primera
+  vez con un correo real.**
+- ✅ Segundo bug encontrado al verificar: `sendMail` (202 sin cuerpo) hacía que **cada correo
+  correcto** fuera seguido de un `[ERREUR SYSTÈME]` al remitente. Corregido (ver Lecciones).
+- ℹ️ acostasalcedo manda **dos correos por tanda**: uno de prueba sin adjunto y el del
+  certificat. El de prueba se ignora en silencio, como está diseñado.
 - Diagnóstico completo en [`Aprendizaje.md`](Aprendizaje.md) § Objetivo 3.
 
 ## Estado anterior (2026-07-20)
@@ -181,6 +188,16 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   dinámico, y de paso el bundler sí incluye el worker (chunk `159.js`).
   **Lección de método:** `tsc` y `next build` pasaron en verde con la ingesta rota. Toda librería
   que cargue archivos hermanos en runtime hay que verificarla **sobre `.next/`**, no compilando.
+- **`sendMail` de Graph responde 202 con el cuerpo VACÍO — y `res.json()` sobre vacío lanza.**
+  `graphAppFetch()` solo trataba el 204 como "sin cuerpo", así que **cada envío correcto
+  terminaba lanzando** un `SyntaxError` después de haber enviado el correo. En el webhook eso
+  caía en el `catch` general y disparaba un **`[ERREUR SYSTÈME]` al remitente detrás de cada
+  correo bueno**, incluido el `[CRÉÉE]`. Fue lo que hizo parecer que la ingesta seguía rota
+  cuando ya funcionaba. Corregido el 2026-07-27: se decide por el **cuerpo**, no por el código
+  (`const t = await res.text(); return t ? JSON.parse(t) : undefined`).
+  **Gotcha:** en `facture/[numero]/repondre` y `facturas/[id]/aprobar` el mismo fallo era
+  invisible porque llaman con `.catch(console.error)` — el correo salía y nadie se enteraba del
+  error. Un bug idéntico puede estar mudo en un sitio y ser escandaloso en otro.
 - **Cuando la ingesta falla, el único que se entera es el cliente.** El webhook avisa por correo
   a acostasalcedo (`[ERREUR]` / `[ERREUR SYSTÈME]`) y no deja rastro en la app. Al diagnosticar
   un "no aparece la factura", **el primer sitio donde mirar es `sentitems` del buzón admin**:
