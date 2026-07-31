@@ -28,6 +28,21 @@ export function formatDate(date: Date | string | null | undefined): string {
   return format(d, "d MMM yyyy", { locale: fr });
 }
 
+/**
+ * Fecha **y hora** en horario de Montréal — para instantes exactos que el destinatario debe
+ * poder leer sin traducir: el vencimiento del plazo de respuesta y la hora en que el
+ * proveedor respondió. El servidor corre en UTC, así que la zona se fija a mano o el correo
+ * mostraría una hora que no es la de nadie.
+ */
+export function formatDateHeure(date: Date | string): string {
+  const d = typeof date === "string" ? parseISO(date) : date;
+  return new Intl.DateTimeFormat("fr-CA", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "America/Montreal",
+  }).format(d);
+}
+
 // Edad en días desde la fecha de captura
 export function calcularEdadDias(dateSaisie: Date | string): number {
   const d = typeof dateSaisie === "string" ? parseISO(dateSaisie) : dateSaisie;

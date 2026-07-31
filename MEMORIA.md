@@ -132,6 +132,20 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
 - Compensaciones ante esa URL adivinable: **una sola respuesta por factura** (409 después),
   IP guardada como rastro, comentario escapado en el correo, rechazo sin motivo denegado.
 - El proveedor solo **aprueba o rechaza con comentario** — nada de los checks internos.
+- **Plazo de respuesta: 30 días** (`JOURS_POUR_REPONDRE` en `src/lib/delai-reponse.ts`).
+  Se ancla en `Factura.createdAt` — cuando se procesó el correo la primera vez — y **no se
+  mueve nunca**: si acostasalcedo reenvía el certificat, la factura se actualiza pero el plazo
+  se mantiene. Decisión del cliente el 2026-07-30, para que **un enlace vencido no pueda
+  revivir** por un reenvío sin que nadie se entere.
+  - Vencido: la página sigue mostrando la factura (con el aviso "Délai de réponse expiré" y la
+    fecha), pero **sin formulario**; la API responde **410** y no escribe nada.
+  - Vigente: el formulario avisa "Vous avez jusqu'au {fecha} — il reste N jours", en ámbar
+    cuando quedan ≤ 5 días.
+  - **No se usó el campo `dateLimite` del schema**: ya significa otra cosa ("Date limite
+    (paiement rapide)" en el formulario de admin). El plazo se calcula, no se almacena.
+- **El correo de respuesta al proveedor** lleva: n° de facture, réponse (approuvée/refusée),
+  **date et heure de la réponse** (en horario de Montréal), projet, montant y el commentaire
+  (o "Aucun commentaire"). Pedido por el cliente el 2026-07-30.
 
 ## Lecciones técnicas
 
@@ -198,6 +212,20 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   **Gotcha:** en `facture/[numero]/repondre` y `facturas/[id]/aprobar` el mismo fallo era
   invisible porque llaman con `.catch(console.error)` — el correo salía y nadie se enteraba del
   error. Un bug idéntico puede estar mudo en un sitio y ser escandaloso en otro.
+- **Las fechas con hora se fijan a `America/Montreal` a mano.** El servidor corre en UTC y el
+  destinatario está en Montréal: cualquier regla de tipo "fin del día" da un corte distinto
+  según dónde corra el proceso. Por eso el plazo de respuesta es un **instante exacto**
+  (`createdAt + 30 días`) y se muestra con `formatDateHeure()` (`Intl` + `timeZone`), no con
+  `endOfDay()`. Comprobado ejecutando la misma lógica con `TZ=UTC` y `TZ=Asia/Tokyo`: salida
+  idéntica. Si alguna vez se vuelve a "final del día", hay que fijar la zona explícitamente.
+- **⚠️ Levantar el build local contra la BD de producción es peligroso: `POST` escribe de
+  verdad.** El 2026-07-31, probando el plazo, un servidor local viejo seguía escuchando en el
+  puerto y se llevó el POST: registró una **respuesta de proveedor falsa** en
+  `Now2707_31758` (aprobada, IP `127.0.0.1`) y **envió un correo real a acostasalcedo**. La
+  fila se pudo borrar y el estado volver a `OUVERT`; el correo no se puede deshacer.
+  **Regla:** antes de hacer un POST contra un servidor local, **confirmar con un GET qué build
+  está sirviendo** (`kill` no garantiza que el puerto quedara libre), y preferir puertos nuevos
+  a reutilizar el mismo.
 - **Cuando la ingesta falla, el único que se entera es el cliente.** El webhook avisa por correo
   a acostasalcedo (`[ERREUR]` / `[ERREUR SYSTÈME]`) y no deja rastro en la app. Al diagnosticar
   un "no aparece la factura", **el primer sitio donde mirar es `sentitems` del buzón admin**:

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { registrarRespuestaFournisseur } from "@/lib/procesar-certificat";
 import { sendAdminEmail } from "@/lib/graph-app";
-import { formatMonto } from "@/lib/utils";
+import { formatMonto, formatDateHeure } from "@/lib/utils";
+import { delaiReponse } from "@/lib/delai-reponse";
 
 /**
  * Respuesta del proveedor. **Ruta pública sin sesión**: la URL es deducible a
@@ -44,11 +45,24 @@ export async function POST(
       noProjet: true,
       montant: true,
       responsableEmail: true,
+      createdAt: true,
     },
   });
 
   if (!factura) {
     return NextResponse.json({ error: "Facture introuvable" }, { status: 404 });
+  }
+
+  // El plazo se comprueba **aquí**, no solo en la página: la ruta es pública y nada
+  // impide llamarla directamente cuando la UI ya no muestra el formulario.
+  const delai = delaiReponse(factura.createdAt);
+  if (delai.expire) {
+    return NextResponse.json(
+      {
+        error: `Le délai de réponse a expiré le ${formatDateHeure(delai.limite)}. Il n'est plus possible de répondre à cette facture.`,
+      },
+      { status: 410 }
+    );
   }
 
   const ip =
@@ -81,6 +95,7 @@ export async function POST(
       montant: formatMonto(Number(factura.montant)),
       approuve: decision === "APPROUVE",
       comentario,
+      dateReponse: new Date(),
     }),
   }).catch((e) => console.error("[facture/repondre] envoi courriel:", e));
 
@@ -93,21 +108,32 @@ function buildReponseHtml(p: {
   montant: string;
   approuve: boolean;
   comentario?: string;
+  dateReponse: Date;
 }): string {
   const color = p.approuve ? "#16a34a" : "#dc2626";
   const label = p.approuve ? "approuvée" : "refusée";
+
+  const ligne = (etiquette: string, valeur: string) => `
+    <tr>
+      <td style="padding:6px 16px 6px 0;color:#6b7280;font-size:13px;vertical-align:top;white-space:nowrap">${etiquette}</td>
+      <td style="padding:6px 0;font-size:13px;color:#111827">${valeur}</td>
+    </tr>`;
 
   return `
     <p>Le fournisseur a <strong style="color:${color}">${label}</strong> la facture
     <strong>${escapeHtml(p.nombreFactura)}</strong>.</p>
     <table style="border-collapse:collapse;margin:12px 0">
-      <tr><td style="padding:4px 12px 4px 0;color:#6b7280;font-size:13px">Projet</td><td style="font-size:13px">${escapeHtml(p.noProjet)}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#6b7280;font-size:13px">Montant</td><td style="font-size:13px">${escapeHtml(p.montant)}</td></tr>
-      ${
+      ${ligne("N° de facture", `<strong>${escapeHtml(p.nombreFactura)}</strong>`)}
+      ${ligne("Réponse", `<strong style="color:${color}">${p.approuve ? "Approuvée" : "Refusée"}</strong>`)}
+      ${ligne("Date de la réponse", escapeHtml(formatDateHeure(p.dateReponse)))}
+      ${ligne("Projet", escapeHtml(p.noProjet) || "—")}
+      ${ligne("Montant", escapeHtml(p.montant))}
+      ${ligne(
+        "Commentaire",
         p.comentario
-          ? `<tr><td style="padding:4px 12px 4px 0;color:#6b7280;font-size:13px;vertical-align:top">Commentaire</td><td style="font-size:13px">${escapeHtml(p.comentario)}</td></tr>`
-          : ""
-      }
+          ? escapeHtml(p.comentario).replace(/\n/g, "<br/>")
+          : `<span style="color:#9ca3af">Aucun commentaire</span>`
+      )}
     </table>
     <hr/>
     <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>

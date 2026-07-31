@@ -545,3 +545,80 @@ el problema resultó no ser de negocio ni de Graph, sino de **empaquetado del bu
 - **El bundle es el punto ciego**: `tsc` y `next build` pasaron en verde durante semanas con
   la ingesta rota. Cualquier librería que use `webpackIgnore` o cargue archivos hermanos en
   runtime merece verificarse **sobre `.next/`**, no solo compilando.
+
+---
+
+# Objetivo 4 — Correo de respuesta completo + plazo de 30 días (2026-07-30)
+
+**Necesidad declarada por el usuario:**
+1. Cuando el proveedor responde, que salga un correo a acostasalcedo con **fecha de la
+   respuesta, n° de factura, la respuesta (aprobada/rechazada) y los comentarios**.
+2. **Límite de 30 días** desde que se procesó el correo para que el enlace deje de aceptar
+   respuestas, y que la página avise del plazo / fecha máxima.
+
+**Rol asumido:** arquitecto de flujos de aprobación — el reto no es el código sino fijar bien
+la regla temporal (qué la ancla, si se mueve, qué pasa en los bordes y en qué zona horaria).
+
+## Progreso
+
+- **% de información para el objetivo: 100%** — implementado y verificado, incluidos los casos
+  de borde y el intento de saltarse la UI.
+
+## Preguntas y respuestas
+
+### P33 — ¿Dónde se ancla el plazo? · ✅ Resuelta
+- **Por qué importa:** define qué enlace vive y cuál muere; equivocarse deja facturas
+  irrespondibles o enlaces abiertos para siempre.
+- **Respuesta:** en `Factura.createdAt` (cuando se procesó el correo la primera vez).
+  **No se reutiliza el campo `dateLimite` del schema**: ya significa "Date limite (paiement
+  rapide)" en el formulario de admin (`FacturaForm.tsx:195`), y mezclar los dos conceptos en
+  una columna habría roto esa pantalla. El plazo se **calcula**, no se almacena → cero
+  migración y ninguna fila vieja con el campo en null. (Fuente: schema + grep de `dateLimite`.)
+
+### P34 — ¿El plazo se reinicia si acostasalcedo reenvía el certificat? · ✅ Resuelta
+- **Por qué importa:** `procesarCertificat()` es idempotente y **actualiza** la factura en un
+  reenvío. Si el plazo se recalculara, un enlace ya vencido volvería a aceptar respuestas.
+- **Respuesta:** **se mantiene el del primer procesamiento.** Decisión del usuario el
+  2026-07-30, eligiendo explícitamente "que un enlace vencido no pueda revivir" por encima de
+  "un PDF corregido da plazo completo". Como el ancla es `createdAt` (que Prisma no toca en un
+  `update`), sale gratis: no hay nada que proteger a mano.
+
+### P35 — ¿"Fin del día 30" o instante exacto? · ✅ Resuelta
+- **Por qué importa:** el servidor corre en UTC y el proveedor está en Montréal (UTC-4).
+- **Respuesta:** **instante exacto** (`createdAt + 30 días`). Primero lo implementé con
+  `endOfDay()` y al probarlo salió el fallo: `endOfDay` usa la zona **del proceso**, así que el
+  mismo código cortaba en un momento distinto en local que en Azure. Con un instante exacto no
+  hay ambigüedad, y la hora se muestra siempre en horario de Montréal vía `Intl` con
+  `timeZone: "America/Montreal"` (`formatDateHeure()` en `utils.ts`), que es también el formato
+  de la "date de la réponse" del correo.
+  **Verificado:** la misma tabla de 9 casos con `TZ=UTC` y `TZ=Asia/Tokyo` da salida idéntica.
+
+### P36 — ¿Basta con esconder el formulario? · ✅ Resuelta
+- **Por qué importa:** la ruta es pública y `POST /api/facture/{n°}/repondre` se puede llamar a
+  mano; esconder el botón no protege nada.
+- **Respuesta:** no basta — el corte está **en la API**, que responde **410 Gone** con la fecha
+  de vencimiento, antes de tocar la base. La página es solo cortesía.
+  **Verificado de verdad:** con el plazo puesto en 0 días, un `POST` directo devolvió 410 y la
+  base quedó intacta (`etatFacture: OUVERT`, `historialAprobacion: []`).
+
+## Verificación realizada
+
+| Caso | Resultado |
+|---|---|
+| Plazo vigente, página real | "Vous avez jusqu'au 26 août 2026 à 13 h 15 — il reste 27 jours" |
+| Plazo vencido, página | Bloque "Délai de réponse expiré" + fecha, **sin formulario** |
+| `POST` con plazo vencido | **410** + mensaje con la fecha, **sin escribir en la BD** |
+| Lógica pura, 9 casos de borde | Correcta e **idéntica** con `TZ=UTC` y `TZ=Asia/Tokyo` |
+
+## Riesgos y cómo se mitigan
+
+- **⚠️ Incidente durante la verificación (2026-07-31).** Al probar el caso vencido, un servidor
+  local anterior seguía escuchando en el mismo puerto y se llevó el `POST`: como ese build aún
+  tenía el plazo de 30 días, **registró una respuesta de proveedor falsa** en `Now2707_31758`
+  (aprobada, IP `127.0.0.1`) contra la **base de producción**, y **envió un correo real** a
+  acostasalcedo (`[RÉPONSE APPROUVÉE]`, 2026-07-31T01:05:42Z).
+  **Reparado:** fila de `historialAprobacion` borrada y `etatFacture` de vuelta a `OUVERT`;
+  la factura vuelve a estar disponible para que el proveedor responda de verdad.
+  **No reparable:** el correo ya salió — hay que avisar a acostasalcedo de que lo ignore.
+  **Lección:** antes de un `POST` contra un servidor local, **confirmar con un GET qué build
+  está sirviendo**; `kill` no garantiza que el puerto quedara libre. Y no reutilizar puertos.

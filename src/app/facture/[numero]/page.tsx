@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { formatMonto, formatDate } from "@/lib/utils";
+import { formatMonto, formatDate, formatDateHeure } from "@/lib/utils";
 import { ROL_FOURNISSEUR } from "@/lib/procesar-certificat";
+import { delaiReponse, JOURS_POUR_REPONDRE } from "@/lib/delai-reponse";
 import { ReponseForm } from "./ReponseForm";
-import { FileText, Clock, Check, X } from "lucide-react";
+import { FileText, Clock, Check, X, CalendarX } from "lucide-react";
 
 // Ruta pública sin sesión: la URL la construye a mano el responsable.
 export const dynamic = "force-dynamic";
@@ -48,6 +49,9 @@ export default async function FacturePubliquePage({
   }
 
   const respuesta = factura.historialAprobacion[0] ?? null;
+  // El plazo corre desde que se procesó el correo y no se mueve aunque la factura
+  // se actualice después. Ver `src/lib/delai-reponse.ts`.
+  const delai = delaiReponse(factura.createdAt);
 
   return (
     <Shell titre={factura.nombreFactura}>
@@ -89,8 +93,14 @@ export default async function FacturePubliquePage({
       <div className="mt-8 pt-6 border-t">
         {respuesta ? (
           <ReponseDeja respuesta={respuesta} />
+        ) : delai.expire ? (
+          <DelaiExpire limite={delai.limite} />
         ) : (
-          <ReponseForm numero={factura.nombreFactura} />
+          <ReponseForm
+            numero={factura.nombreFactura}
+            dateLimite={formatDateHeure(delai.limite)}
+            joursRestants={delai.joursRestants}
+          />
         )}
       </div>
     </Shell>
@@ -197,6 +207,29 @@ function ChaineApprobation({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * El enlace sigue mostrando la factura cuando el plazo vence — se explica el porqué en vez
+ * de esconderla, pero sin formulario. El corte real está en la API, no aquí.
+ */
+function DelaiExpire({ limite }: { limite: Date }) {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+      <div className="flex items-center gap-2">
+        <CalendarX className="w-5 h-5 text-amber-600" />
+        <h2 className="font-semibold text-amber-900">Délai de réponse expiré</h2>
+      </div>
+      <p className="text-sm text-amber-800 mt-2">
+        Le délai de {JOURS_POUR_REPONDRE} jours pour répondre à cette facture a expiré le{" "}
+        <strong>{formatDateHeure(limite)}</strong>. Il n&apos;est plus possible
+        d&apos;envoyer une réponse par ce lien.
+      </p>
+      <p className="text-sm text-amber-800 mt-2">
+        Veuillez communiquer avec la personne qui vous a transmis ce lien.
+      </p>
     </div>
   );
 }

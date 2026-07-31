@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X, Loader2, AlertCircle } from "lucide-react";
+import { Check, X, Loader2, AlertCircle, CalendarClock } from "lucide-react";
 
 type Decision = "APPROUVE" | "REFUSE";
 
-export function ReponseForm({ numero }: { numero: string }) {
+export function ReponseForm({
+  numero,
+  dateLimite,
+  joursRestants,
+}: {
+  numero: string;
+  /** Fecha límite ya formateada en el servidor. */
+  dateLimite: string;
+  joursRestants: number;
+}) {
   const router = useRouter();
   const [decision, setDecision] = useState<Decision | null>(null);
   const [comentario, setComentario] = useState("");
@@ -52,6 +61,41 @@ export function ReponseForm({ numero }: { numero: string }) {
       <p className="text-sm text-gray-500 mt-1">
         Cette facture ne peut être répondue qu&apos;une seule fois.
       </p>
+
+      {/* El plazo se avisa antes de que el proveedor elija, no después de enviar. */}
+      <div
+        className={`mt-4 flex items-start gap-2 rounded-lg border p-3 ${
+          joursRestants <= 5
+            ? "border-amber-200 bg-amber-50"
+            : "border-gray-200 bg-gray-50"
+        }`}
+      >
+        <CalendarClock
+          className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+            joursRestants <= 5 ? "text-amber-600" : "text-gray-400"
+          }`}
+        />
+        <p
+          className={`text-sm ${
+            joursRestants <= 5 ? "text-amber-800" : "text-gray-600"
+          }`}
+        >
+          {/* `joursRestants` se redondea hacia arriba: mientras quede plazo es ≥ 1,
+              así que 1 significa "hoy es el último día". */}
+          {joursRestants <= 1 ? (
+            <>
+              <strong>Dernier jour pour répondre :</strong> {dateLimite}. Passé ce
+              délai, ce lien n&apos;acceptera plus de réponse.
+            </>
+          ) : (
+            <>
+              Vous avez jusqu&apos;au <strong>{dateLimite}</strong> pour répondre — il
+              reste {joursRestants} jours. Passé ce délai, ce lien n&apos;acceptera
+              plus de réponse.
+            </>
+          )}
+        </p>
+      </div>
 
       {/* Decisión */}
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
