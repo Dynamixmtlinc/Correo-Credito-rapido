@@ -132,6 +132,14 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
 - Compensaciones ante esa URL adivinable: **una sola respuesta por factura** (409 después),
   IP guardada como rastro, comentario escapado en el correo, rechazo sin motivo denegado.
 - El proveedor solo **aprueba o rechaza con comentario** — nada de los checks internos.
+- **Vocabulario del proveedor (cliente, 2026-07-31): «J'accepte» / «Je conteste»**, no
+  «Approuver / Refuser». Se aplica a los botones, al bloque de factura ya respondida
+  («Facture acceptée / contestée»), al correo (`[RÉPONSE ACCEPTÉE]` / `[RÉPONSE CONTESTÉE]`,
+  "Le fournisseur a accepté / contesté la facture") y al badge de la galería del admin
+  («Accepté / Contesté»).
+  ⚠️ **No confundir con la cadena interna**: los 6 aprobadores de la CSDM siguen siendo
+  «Approuvé / Refusé» — ese texto viene del PDF y describe a otro actor. `EstatusAprobador`
+  en la base **sigue siendo `APPROUVE` / `REFUSE`**: cambió el texto, no el modelo de datos.
 - **Plazo de respuesta: 30 días** (`JOURS_POUR_REPONDRE` en `src/lib/delai-reponse.ts`).
   Se ancla en `Factura.createdAt` — cuando se procesó el correo la primera vez — y **no se
   mueve nunca**: si acostasalcedo reenvía el certificat, la factura se actualiza pero el plazo

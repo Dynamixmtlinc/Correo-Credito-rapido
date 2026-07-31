@@ -29,10 +29,10 @@ export async function POST(
     return NextResponse.json({ error: "Décision invalide" }, { status: 400 });
   }
 
-  // Un refus sin motif no le sirve a nadie aguas abajo.
+  // Une contestation sans motif no le sirve a nadie aguas abajo.
   if (decision === "REFUSE" && !comentario) {
     return NextResponse.json(
-      { error: "Un commentaire est obligatoire pour refuser la facture" },
+      { error: "Un commentaire est obligatoire pour contester la facture" },
       { status: 400 }
     );
   }
@@ -88,7 +88,7 @@ export async function POST(
   // respuesta. Él decide a quién reenviarlo. No debe tumbar la respuesta si falla.
   sendAdminEmail({
     to: [factura.responsableEmail],
-    subject: `[RÉPONSE ${decision === "APPROUVE" ? "APPROUVÉE" : "REFUSÉE"}] Facture ${factura.nombreFactura}`,
+    subject: `[RÉPONSE ${decision === "APPROUVE" ? "ACCEPTÉE" : "CONTESTÉE"}] Facture ${factura.nombreFactura}`,
     bodyHtml: buildReponseHtml({
       nombreFactura: factura.nombreFactura,
       noProjet: factura.noProjet,
@@ -110,8 +110,10 @@ function buildReponseHtml(p: {
   comentario?: string;
   dateReponse: Date;
 }): string {
+  // Vocabulario del proveedor, fijado por el cliente el 2026-07-31: «J'accepte» /
+  // «Je conteste». El enum de la base sigue siendo APPROUVE/REFUSE.
   const color = p.approuve ? "#16a34a" : "#dc2626";
-  const label = p.approuve ? "approuvée" : "refusée";
+  const verbe = p.approuve ? "accepté" : "contesté";
 
   const ligne = (etiquette: string, valeur: string) => `
     <tr>
@@ -120,11 +122,11 @@ function buildReponseHtml(p: {
     </tr>`;
 
   return `
-    <p>Le fournisseur a <strong style="color:${color}">${label}</strong> la facture
+    <p>Le fournisseur a <strong style="color:${color}">${verbe}</strong> la facture
     <strong>${escapeHtml(p.nombreFactura)}</strong>.</p>
     <table style="border-collapse:collapse;margin:12px 0">
       ${ligne("N° de facture", `<strong>${escapeHtml(p.nombreFactura)}</strong>`)}
-      ${ligne("Réponse", `<strong style="color:${color}">${p.approuve ? "Approuvée" : "Refusée"}</strong>`)}
+      ${ligne("Réponse", `<strong style="color:${color}">${p.approuve ? "Acceptée" : "Contestée"}</strong>`)}
       ${ligne("Date de la réponse", escapeHtml(formatDateHeure(p.dateReponse)))}
       ${ligne("Projet", escapeHtml(p.noProjet) || "—")}
       ${ligne("Montant", escapeHtml(p.montant))}

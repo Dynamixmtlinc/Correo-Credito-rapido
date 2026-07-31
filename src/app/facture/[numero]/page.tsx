@@ -255,7 +255,7 @@ function ReponseDeja({
         <h2
           className={`font-semibold ${approuve ? "text-green-800" : "text-red-800"}`}
         >
-          Facture {approuve ? "approuvée" : "refusée"}
+          Facture {approuve ? "acceptée" : "contestée"}
         </h2>
       </div>
       <p className="text-sm text-gray-600 mt-2">

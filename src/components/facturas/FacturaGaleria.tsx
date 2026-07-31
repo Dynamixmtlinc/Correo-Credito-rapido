@@ -84,7 +84,10 @@ function ReponseFournisseurBadge({
       title={respuesta.comentario ?? undefined}
     >
       {approuve ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-      {approuve ? "Approuvé" : "Refusé"}
+      {/* Vocabulario del proveedor: «J'accepte» / «Je conteste» (cliente, 2026-07-31).
+          No confundir con los estados de la cadena interna, que siguen siendo
+          Approuvé/Refusé porque vienen del PDF. */}
+      {approuve ? "Accepté" : "Contesté"}
     </span>
   );
 }

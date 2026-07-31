@@ -22,7 +22,8 @@ export function ReponseForm({
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  // Refuser sin motivo no le sirve a nadie aguas abajo; el backend lo exige igual.
+  // Contestar sin motivo no le sirve a nadie aguas abajo; el backend lo exige igual.
+  // El enum sigue siendo APPROUVE/REFUSE: cambia el texto, no el modelo de datos.
   const commentaireRequis = decision === "REFUSE";
   const peutEnvoyer =
     decision !== null && (!commentaireRequis || comentario.trim().length > 0);
@@ -110,7 +111,7 @@ export function ReponseForm({
           }`}
         >
           <Check className="w-4 h-4" />
-          Approuver
+          J&apos;accepte
         </button>
 
         <button
@@ -124,7 +125,7 @@ export function ReponseForm({
           }`}
         >
           <X className="w-4 h-4" />
-          Refuser
+          Je conteste
         </button>
       </div>
 
@@ -136,7 +137,7 @@ export function ReponseForm({
         >
           Commentaire{" "}
           {commentaireRequis ? (
-            <span className="text-red-600">(obligatoire pour un refus)</span>
+            <span className="text-red-600">(obligatoire pour une contestation)</span>
           ) : (
             <span className="text-gray-400 font-normal">(facultatif)</span>
           )}
@@ -150,7 +151,7 @@ export function ReponseForm({
           maxLength={2000}
           placeholder={
             commentaireRequis
-              ? "Indiquez le motif du refus…"
+              ? "Indiquez le motif de la contestation…"
               : "Ajoutez une précision si nécessaire…"
           }
           className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csdm-blue focus:border-transparent disabled:bg-gray-50"
