@@ -88,7 +88,7 @@ export async function POST(
   // respuesta. Él decide a quién reenviarlo. No debe tumbar la respuesta si falla.
   sendAdminEmail({
     to: [factura.responsableEmail],
-    subject: `[RÉPONSE ${decision === "APPROUVE" ? "ACCEPTÉE" : "CONTESTÉE"}] Facture ${factura.nombreFactura}`,
+    subject: `[${decision === "APPROUVE" ? "J'ACCEPTE" : "JE CONTESTE"}] Facture ${factura.nombreFactura}`,
     bodyHtml: buildReponseHtml({
       nombreFactura: factura.nombreFactura,
       noProjet: factura.noProjet,
@@ -110,10 +110,12 @@ function buildReponseHtml(p: {
   comentario?: string;
   dateReponse: Date;
 }): string {
-  // Vocabulario del proveedor, fijado por el cliente el 2026-07-31: «J'accepte» /
-  // «Je conteste». El enum de la base sigue siendo APPROUVE/REFUSE.
+  // El correo usa **exactamente** la misma etiqueta que ve el proveedor en la página
+  // («J'accepte» / «Je conteste»), no una variante conjugada: quien lee el correo debe
+  // reconocer al instante qué botón se pulsó. El enum de la base sigue siendo
+  // APPROUVE/REFUSE. Cliente, 2026-07-31.
   const color = p.approuve ? "#16a34a" : "#dc2626";
-  const verbe = p.approuve ? "accepté" : "contesté";
+  const reponse = p.approuve ? "J'accepte" : "Je conteste";
 
   const ligne = (etiquette: string, valeur: string) => `
     <tr>
@@ -122,19 +124,21 @@ function buildReponseHtml(p: {
     </tr>`;
 
   return `
-    <p>Le fournisseur a <strong style="color:${color}">${verbe}</strong> la facture
-    <strong>${escapeHtml(p.nombreFactura)}</strong>.</p>
+    <p>Le fournisseur a répondu à la facture
+    <strong>${escapeHtml(p.nombreFactura)}</strong> :
+    <strong style="color:${color}">${escapeHtml(reponse)}</strong>.</p>
     <table style="border-collapse:collapse;margin:12px 0">
       ${ligne("N° de facture", `<strong>${escapeHtml(p.nombreFactura)}</strong>`)}
-      ${ligne("Réponse", `<strong style="color:${color}">${p.approuve ? "Acceptée" : "Contestée"}</strong>`)}
+      ${ligne("Réponse", `<strong style="color:${color}">${escapeHtml(reponse)}</strong>`)}
       ${ligne("Date de la réponse", escapeHtml(formatDateHeure(p.dateReponse)))}
       ${ligne("Projet", escapeHtml(p.noProjet) || "—")}
       ${ligne("Montant", escapeHtml(p.montant))}
+      ${/* Sin comentario, la fila queda vacía: nada de texto de relleno. Cliente,
+           2026-07-31. Se conserva la fila para que el correo tenga siempre la misma
+           forma y se vea de un vistazo que no se escribió nada. */ ""}
       ${ligne(
         "Commentaire",
-        p.comentario
-          ? escapeHtml(p.comentario).replace(/\n/g, "<br/>")
-          : `<span style="color:#9ca3af">Aucun commentaire</span>`
+        p.comentario ? escapeHtml(p.comentario).replace(/\n/g, "<br/>") : ""
       )}
     </table>
     <hr/>

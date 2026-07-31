@@ -151,9 +151,14 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
     cuando quedan ≤ 5 días.
   - **No se usó el campo `dateLimite` del schema**: ya significa otra cosa ("Date limite
     (paiement rapide)" en el formulario de admin). El plazo se calcula, no se almacena.
-- **El correo de respuesta al proveedor** lleva: n° de facture, réponse (approuvée/refusée),
-  **date et heure de la réponse** (en horario de Montréal), projet, montant y el commentaire
-  (o "Aucun commentaire"). Pedido por el cliente el 2026-07-30.
+- **El correo de respuesta al proveedor** lleva: n° de facture, réponse, **date et heure de la
+  réponse** (horario de Montréal), projet, montant y el commentaire. Pedido por el cliente el
+  2026-07-30, afinado el 2026-07-31:
+  - La réponse se escribe **con la misma etiqueta que ve el proveedor** — «J'accepte» /
+    «Je conteste», no una variante conjugada — para que quien lea el correo reconozca al
+    instante qué botón se pulsó. Asunto: `[J'ACCEPTE]` / `[JE CONTESTE]`.
+  - **Sin comentario, la fila va vacía**: nada de "Aucun commentaire" ni texto de relleno.
+    La fila se conserva para que el correo tenga siempre la misma forma.
 
 ## Lecciones técnicas
 
