@@ -6,8 +6,8 @@ import { Providers } from "@/components/layout/Providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Approbations de Factures — CSDM",
-  description: "Système de gestion et d'approbation des factures — CSDM",
+  title: "Approbations de Factures",
+  description: "Système de gestion et d'approbation des factures",
 };
 
 export default function RootLayout({
