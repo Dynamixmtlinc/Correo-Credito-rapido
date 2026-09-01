@@ -21,7 +21,6 @@ export function AppHeader({ onRefresh }: AppHeaderProps) {
           </div>
           <div>
             <p className="font-semibold text-sm leading-tight">Approbations de Factures</p>
-            <p className="text-xs text-blue-200 leading-tight">CSDM</p>
           </div>
         </div>
 
