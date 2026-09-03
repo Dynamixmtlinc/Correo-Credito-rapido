@@ -68,26 +68,18 @@ export default async function FacturePubliquePage({
         </div>
       </div>
 
-      {/* Datos de la factura */}
+      {/* Datos de la factura.
+          El proveedor ve SOLO 7 campos (decisión del cliente, 2026-09-03): los 3 de la
+          cabecera + estos 4. Todo lo interno (agent administratif, indice comptable,
+          paiement rapide, fournisseur homologué y la chaîne d'approbation) queda fuera. */}
       <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 mb-6">
         <Champ label="Date de la facture" valeur={formatDate(factura.dateFacture)} />
-        <Champ label="Date de la saisie" valeur={formatDate(factura.dateSaisie)} />
+        {/* `dateSaisie` viene del PDF («Date de saisie»); para el proveedor se
+            enuncia como la fecha en que la CSDM recibió la factura. */}
+        <Champ label="Date de réception" valeur={formatDate(factura.dateSaisie)} />
         <Champ label="Fournisseur" valeur={factura.fournisseur?.nombre ?? "—"} />
         <Champ label="École" valeur={factura.ecole?.nombre ?? "—"} />
-        <Champ
-          label="Agent administratif"
-          valeur={factura.responsableNombre ?? "—"}
-        />
-        <Champ label="Indice comptable" valeur={factura.indiceComptable ?? "—"} />
-        <Champ label="Paiement rapide" valeur={factura.paimentRapide ? "Oui" : "Non"} />
-        <Champ
-          label="Fournisseur homologué"
-          valeur={factura.fourHomologue ? "Oui" : "Non"}
-        />
       </div>
-
-      {/* Cadena de aprobación interna, informativa */}
-      <ChaineApprobation factura={factura} />
 
       {/* Respuesta */}
       <div className="mt-8 pt-6 border-t">
@@ -158,55 +150,6 @@ function Champ({
       >
         {valeur}
       </dd>
-    </div>
-  );
-}
-
-const ROLES_AFFICHES = [
-  { label: "Chargé de projet", nombre: "cpNombre", etat: "etatCP" },
-  { label: "Régisseur", nombre: "regisseurNombre", etat: "etatRegisseur" },
-  { label: "Coordonnateur", nombre: "coordoNombre", etat: "etatCoordo" },
-  { label: "Direction adjointe de service", nombre: "dirAdjointeNombre", etat: "etatDirAdj" },
-  { label: "Direction de service", nombre: "directionGeneraleNombre", etat: "etatDirGen" },
-] as const;
-
-function ChaineApprobation({
-  factura,
-}: {
-  factura: Record<string, unknown> & { nombreFactura: string };
-}) {
-  return (
-    <div>
-      <h2 className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-3">
-        Chaîne d&apos;approbation
-      </h2>
-      <div className="rounded-lg border border-gray-200 divide-y divide-gray-100">
-        {ROLES_AFFICHES.map((r) => {
-          const nombre = factura[r.nombre] as string | null;
-          const etat = factura[r.etat] as string;
-          return (
-            <div
-              key={r.label}
-              className="flex items-center justify-between px-4 py-2.5 text-sm"
-            >
-              <span className="text-gray-600">{r.label}</span>
-              <span className="flex items-center gap-3">
-                <span className="text-gray-800">{nombre ?? "—"}</span>
-                {etat === "APPROUVE" && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                    Approuvé
-                  </span>
-                )}
-                {etat === "REFUSE" && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                    Refusé
-                  </span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

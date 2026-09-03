@@ -622,3 +622,141 @@ la regla temporal (qué la ancla, si se mueve, qué pasa en los bordes y en qué
   **No reparable:** el correo ya salió — hay que avisar a acostasalcedo de que lo ignore.
   **Lección:** antes de un `POST` contra un servidor local, **confirmar con un GET qué build
   está sirviendo**; `kill` no garantiza que el puerto quedara libre. Y no reutilizar puertos.
+
+---
+
+# Objetivo 5 — «Se envían dos correos, deja solo uno» (2026-08-17)
+
+**Rol asumido:** ingeniero backend de integraciones (Microsoft Graph + webhooks).
+
+## Objetivo / necesidad
+
+El cliente reporta que **después de responder una factura llegan dos correos** y pide
+eliminar el de la captura — el que dice *«La facture T17_32309 a été créée dans le
+système»* con el enlace y *«À vérifier: Fournisseur "*SERVICE DES FINANCES" introuvable
+dans le catalogue»* — dejando **solo el otro**.
+
+## Preguntas y respuestas
+
+### P37 — ¿Es una duplicación (dos notificaciones de Graph) o son dos correos distintos? · ✅ Resuelta
+- **Por qué importa:** determina el arreglo. Si Graph notifica dos veces hay que deduplicar
+  por `messageId`; si son dos correos por diseño, basta con quitar uno. En julio ya hubo un
+  falso positivo de "duplicados" que resultó ser el bug del 202 de `sendMail`.
+- **Respuesta:** **no hay duplicación.** Leyendo `sentitems` del buzón admin vía Graph
+  (app-only, solo lectura), cada factura reciente produce **exactamente un par**, en dos
+  momentos distintos separados por minutos:
+
+  | Envío | Asunto | Origen |
+  |---|---|---|
+  | 2026-08-18T00:26:29Z | `[CRÉÉE] Facture T17_32309` | ingesta del certificat |
+  | 2026-08-18T00:28:21Z | `[J'ACCEPTE] Facture T17_32309` | respuesta del fournisseur |
+
+  Mismo patrón en `t14_32175`, `test13_32059`, `13T_32035`, `10aug_31866`. El de la captura
+  es el **acuse de ingesta**; el que se conserva es el de la **respuesta**.
+  (Fuente: `sentitems` de `WEBHOOK_ADMIN_EMAIL`, consultado el 2026-08-17.)
+
+### P38 — ¿Se pierde algo al quitar el acuse de ingesta? · ✅ Resuelta
+- **Por qué importa:** ese correo llevaba el **enlace para el fournisseur** y los **avisos**
+  de catálogo. Borrarlo a ciegas podría romper el flujo de trabajo del cliente.
+- **Respuesta:** nada operativo.
+  1. **El enlace no hace falta**: la URL es deducible **a propósito** (`/facture/{n°}`) y
+     acostasalcedo la construye a mano incluso antes de que la factura exista (ver MEMORIA,
+     "Flujo de la factura").
+  2. **Los avisos eran ruido, no señal**: los catálogos `Ecole`/`Fournisseur` están vacíos
+     (pendiente nº4), así que *«introuvable dans le catalogue»* saltaba en **todas** las
+     facturas. Ahora van al log del servidor.
+  3. **Los fallos siguen avisando**: `[ERREUR]` y `[ERREUR SYSTÈME]` no se tocaron. Era
+     obligatorio conservarlos — sin ellos, un fallo de ingesta quedaría totalmente mudo.
+
+### P39 — ¿Cómo verificar que el correo ya no sale, sin mandar un correo real? · ✅ Resuelta
+- **Por qué importa:** la lección de julio es que `tsc` y `next build` pasan en verde con la
+  ingesta rota; hay que verificar **sobre `.next/`**, no compilando. Y disparar un correo de
+  prueba escribe de verdad en producción (incidente del 2026-07-31).
+- **Respuesta:** se comprueba en el **bundle compilado**, sin tocar el buzón ni la BD:
+  `grep` sobre `.next/server/app/api/webhook/correo/route.js` →
+  `transmettre` **0**, `MISE` **0** (el acuse desapareció), `ERREUR` **2**
+  (las dos ramas de fallo intactas). `tsc --noEmit` y `next build` en verde.
+
+## Solución aplicada
+
+`src/app/api/webhook/correo/route.ts`: se elimina el `sendAdminEmail` del camino de éxito
+y los helpers `buildSuccessHtml()` / `urlFacture()` que quedaban sin uso. En su lugar, un
+`console.log` con el nº de factura, si se creó o actualizó, y los avisos — para que la
+ingesta correcta deje **traza en el servidor** aunque ya no escriba a nadie.
+
+## Riesgos y cómo se mitigan
+
+- **Una ingesta correcta ya no se confirma por ningún canal visible para el cliente.**
+  Es la contrapartida aceptada del cambio. Mitigación parcial: la traza en el log del
+  App Service. Refuerza el pendiente **5-bis** de MEMORIA (registrar los intentos de
+  ingesta en la app, consultables desde la UI).
+- **No desplegado todavía**: el cambio está en el working tree. Hasta que no entre por CI a
+  `cr-dynamixmtl`, producción sigue mandando los dos correos.
+
+## Progreso
+
+- **% de información para el objetivo:** 100 %
+- **Estado:** resuelto y verificado sobre el build. Falta desplegar.
+
+---
+
+## Objetivo 5 (2026-09-03) — Recortar la página del proveedor a 7 campos
+
+**Objetivo / necesidad.** En `/facture/{n°}` —la página que abre el proveedor para responder
+«J'accepte» / «Je conteste»— mostrar **solo los 7 campos** que el cliente marcó en verde
+sobre una captura, y quitar los que tachó en rojo.
+
+**Rol asumido.** Diseñador de la superficie pública / responsable de minimización de datos:
+la decisión no es estética, es **qué información sale de la CSDM hacia un tercero** por una
+URL deducible a propósito.
+
+### Fuentes recibidas
+- Captura anotada por el cliente (2026-09-03): verde = conservar, rojo = quitar, más la
+  corrección manuscrita «Reception» sobre «DATE DE LA SAISIE».
+
+### Preguntas y respuestas
+
+#### P40 — ¿Cuáles son exactamente los 7 campos? · ✅ Resuelta
+- **Por qué importa:** quitar de más deja al proveedor sin poder reconocer su factura;
+  quitar de menos filtra datos internos.
+- **Respuesta (captura + «solo son 7 campos» del usuario):** N° de facture · Montant total
+  (taxes incl.) · Projet · Date de la facture · **Date de réception** · Fournisseur · École.
+  Coincide exacto con los 7 subrayados en verde.
+
+#### P41 — La `Chaîne d'approbation`: ¿se va entera o se queda «Chargé de projet»? · ✅ Resuelta
+- **Por qué importa:** en la captura las 4 filas de abajo están tachadas pero la de
+  «Chargé de projet» no; el encabezado «CHAÎNE D'APPROBATION» sí lleva raya roja.
+- **Respuesta:** **se va entera.** El recuento manda: con «Chargé de projet» serían 8 campos
+  y el usuario dijo 7; además el encabezado del bloque está tachado, y no tiene sentido dejar
+  una tabla de un solo renglón. Se eliminó el componente `ChaineApprobation` y la tabla
+  `ROLES_AFFICHES`. *(Si el cliente lo quería, es un revert de un bloque.)*
+
+#### P42 — «Date de réception»: ¿campo nuevo o reetiquetado? · ✅ Resuelta
+- **Por qué importa:** si hiciera falta un dato nuevo, habría que tocar schema, parser e
+  ingesta; si es solo la etiqueta, es una línea.
+- **Respuesta:** **reetiquetado, solo en la página pública.** `Factura.dateSaisie` sale del
+  «Date de saisie» del PDF (`certificat-parser.ts:368`) y es, de hecho, cuando la CSDM
+  registró/recibió la factura. Admin (`FacturaDetalle`, `FacturaForm`) mantiene «Date de
+  saisie». Mismo patrón que «J'accepte / Je conteste»: cambia el idioma del proveedor,
+  no el modelo.
+
+### Solución aplicada
+`src/app/facture/[numero]/page.tsx`: la rejilla de datos baja de 8 a 4 campos (los 3 de la
+cabecera no se tocan), «Date de la saisie» → «Date de réception», y se borran el bloque
+`<ChaineApprobation>`, su componente y `ROLES_AFFICHES`. **Nada más se tocó**: ni la API
+`repondre`, ni el correo de respuesta, ni la vista de admin.
+
+### Verificación
+- `node node_modules/typescript/bin/tsc --noEmit` → **exit 0**.
+- Sin imports ni componentes huérfanos (`ChaineApprobation` y `ROLES_AFFICHES` eliminados
+  junto con su único uso; los iconos importados siguen todos en uso).
+
+### Riesgos
+- **No desplegado**: el cambio vive en el working tree; producción sigue mostrando los 11
+  campos y la cadena hasta que entre por CI a `cr-dynamixmtl`.
+- **Efecto lateral bueno, no buscado:** deja de exponerse en una URL adivinable el nombre y
+  la decisión de los aprobadores internos de la CSDM.
+
+### Progreso
+- **% de información para el objetivo:** 100 %
+- **Estado:** resuelto y typecheck en verde. Falta desplegar.

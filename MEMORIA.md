@@ -30,7 +30,32 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-07-27)
+## Estado actual (2026-09-03)
+
+**La página del proveedor se recorta a 7 campos.** `/facture/{n°}` mostraba 11 campos más
+la cadena de aprobación completa con nombres y decisiones internas. El cliente marcó sobre
+una captura qué se queda y qué se va: quedan los 7 de negocio, se va todo lo interno, y
+«Date de la saisie» pasa a llamarse «Date de réception». Aplicado en
+`src/app/facture/[numero]/page.tsx`; `tsc --noEmit` en verde. Ver
+"Decisiones y reglas de negocio". **Pendiente de desplegar.**
+
+## Estado anterior (2026-08-17)
+
+**Un solo correo por factura: el de la respuesta del fournisseur.**
+
+- El sistema mandaba **dos correos** por cada factura, en dos momentos distintos:
+  `[CRÉÉE]` / `[MISE À JOUR]` al ingerir el certificat (con el enlace y los avisos), y
+  `[J'ACCEPTE]` / `[JE CONTESTE]` cuando el proveedor respondía. En las pruebas del
+  cliente los dos caían con 2 minutos de diferencia y parecían un duplicado.
+  Comprobado en `sentitems` del buzón admin: **no había duplicación**, eran los dos
+  correos por diseño (`T17_32309`, `t14_32175`, `test13_32059`, `13T_32035`,
+  `10aug_31866` — todas con el mismo par).
+- ✅ **Quitado el acuse de ingesta** (`src/app/api/webhook/correo/route.ts`): la ingesta
+  correcta ya no escribe a nadie, solo deja traza en el log del servidor. Verificado
+  sobre `.next/` tras el build: `transmettre` y `MISE` → 0 ocurrencias; los dos correos
+  de fallo siguen ahí.
+
+## Estado anterior (2026-07-27)
 
 **Primer correo real recibido — y descubrió que la ingesta nunca funcionó en el servidor.**
 
@@ -117,7 +142,7 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
 
 ```
 1. acostasalcedo ──correo + CertificatCR.pdf──> admin@dynamixmtl.com
-2. la app parsea el PDF y crea/actualiza la factura
+2. la app parsea el PDF y crea/actualiza la factura  ← en silencio, sin acusar recibo
 3. acostasalcedo ──enlace escrito a mano──> proveedor
       ruta SIEMPRE igual: /facture/{nº de factura}
 4. el proveedor abre la ruta pública, ve la factura y responde
@@ -140,6 +165,37 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   ⚠️ **No confundir con la cadena interna**: los 6 aprobadores de la CSDM siguen siendo
   «Approuvé / Refusé» — ese texto viene del PDF y describe a otro actor. `EstatusAprobador`
   en la base **sigue siendo `APPROUVE` / `REFUSE`**: cambió el texto, no el modelo de datos.
+- **La página pública del proveedor muestra SOLO 7 campos (cliente, 2026-09-03).**
+  `/facture/{n°}` es lo que ve un tercero externo a la CSDM, así que solo lleva lo que
+  necesita para reconocer su propia factura y responder:
+  **N° de facture · Montant total (taxes incl.) · Projet · Date de la facture ·
+  Date de réception · Fournisseur · École.**
+  - **Se quitó todo lo interno**: `Agent administratif`, `Indice comptable`,
+    `Paiement rapide`, `Fournisseur homologué` y **la `Chaîne d'approbation` entera**
+    (con ella se fue el componente `ChaineApprobation` y la tabla `ROLES_AFFICHES` de
+    `src/app/facture/[numero]/page.tsx`). Eran datos de gestión interna —incluidos los
+    nombres y decisiones de los 6 aprobadores de la CSDM— expuestos en una URL
+    deducible a propósito: quitarlos también **reduce la fuga de información**.
+  - **`Date de la saisie` → `Date de réception`**: cambia **solo la etiqueta** de la
+    página pública. El dato sigue siendo `Factura.dateSaisie`, que viene del
+    «Date de saisie» del PDF; el admin (`FacturaDetalle`, `FacturaForm`) conserva su
+    vocabulario. Mismo criterio que con «J'accepte / Je conteste»: el proveedor lee su
+    propio idioma, el modelo de datos no se toca.
+  - ⚠️ **La chaîne d'approbation no desaparece del sistema**, solo del ojo del proveedor:
+    sigue viva en el modelo, en la ingesta y en la vista de admin.
+- **La ingesta correcta no envía correo (cliente, 2026-08-17).** El sistema emite **un
+  solo correo por factura**: el de la respuesta del fournisseur. El acuse
+  `[CRÉÉE]` / `[MISE À JOUR]` que se mandaba al procesar el certificat **se eliminó**
+  — el cliente veía dos correos seguidos y solo quería el de la respuesta.
+  - No se pierde nada operativo: el enlace que llevaba ese acuse es **deducible a
+    propósito** (`/facture/{n°}`) y acostasalcedo lo construye a mano de todos modos.
+  - Los avisos que llevaba (`École`/`Fournisseur introuvable dans le catalogue`) eran
+    **ruido constante**, no señal: los catálogos están vacíos, así que saltaban en
+    todas las facturas. Ahora van al log del servidor.
+  - ⚠️ **Los fallos sí siguen avisando** (`[ERREUR]` y `[ERREUR SYSTÈME]`): sin eso, un
+    fallo de ingesta sería totalmente mudo. No borrar esas dos ramas.
+  - **Contrapartida asumida:** una ingesta correcta ya no se confirma por ningún canal
+    visible para el cliente. Refuerza el pendiente 5-bis (registrar los intentos en la app).
 - **Plazo de respuesta: 30 días** (`JOURS_POUR_REPONDRE` en `src/lib/delai-reponse.ts`).
   Se ancla en `Factura.createdAt` — cuando se procesó el correo la primera vez — y **no se
   mueve nunca**: si acostasalcedo reenvía el certificat, la factura se actualiza pero el plazo
@@ -162,6 +218,28 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
 
 ## Lecciones técnicas
 
+- **Next.js 15 entrega el parámetro de ruta SIN decodificar → un espacio en el n° de factura
+  rompe el enlace del proveedor.** Diagnosticado el 2026-09-03 con `Je conteste_03sept_33988`.
+  La ingesta la creó bien (proyecto y montante correctos, visible en la galería), pero
+  `/facture/Je%20conteste_03sept_33988` mostraba *«Facture pas encore disponible»*.
+  Causa: en `src/app/facture/[numero]/page.tsx`, `const { numero } = await params` llega como
+  el literal `"Je%20conteste_03sept_33988"` (comprobado con `charCodeAt`: `37,50,48` = `%20`),
+  mientras que en la BD el valor tiene un espacio real (código 32). `findFirst` no encuentra
+  nada y cae en la rama del correo-no-procesado.
+  **Lo engañoso es el mensaje**: esa rama existe para "el certificat aún no ha entrado", así
+  que un fallo de *lookup* se disfraza de fallo de *ingesta* y manda a diagnosticar el buzón,
+  que es el sitio equivocado.
+  - **Reproducido en local igual que en producción** → es Next, no Azure ni el proxy.
+  - **Solo rompe el espacio**: `Fact_J'accepte_33689` abre bien con `'` crudo y con `%27`.
+  - El botón «copier le lien» **no tiene la culpa**: aplica `encodeURIComponent` como debe.
+  - **Decisión del cliente (2026-09-03): los n° de factura nunca llevarán espacios**, se
+    corrige en origen. **No se tocó el código.** Queda latente para cualquier otro carácter
+    que viaje codificado (acentos, etc.); el arreglo sería `decodeURIComponent` sobre el
+    parámetro en la página **y** en `api/facture/[numero]/repondre`.
+  - ⚠️ **Las facturas ya creadas con espacio siguen inaccesibles** (`Je conteste_03sept_33988`,
+    `Je conteste_33907`): hay que renombrarlas en la BD para revivir su enlace.
+  **Lección de método:** ante un «pas encore disponible», comparar **los bytes** del parámetro
+  con los de `nombreFactura` en la BD antes de mirar el buzón.
 - **`AUTH_TRUST_HOST=true` es obligatorio en App Service — y el flag de código NO basta.**
   Sin confiar en el host, NextAuth v5 lanza `UntrustedHost` y **todos** los endpoints
   `/api/auth/*` devuelven 500 con un mensaje genérico de "server configuration" que no dice
