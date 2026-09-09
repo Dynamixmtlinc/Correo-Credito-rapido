@@ -822,3 +822,71 @@ es detectar qué reglas de negocio colgaban de ese campo y no dejarlas rotas.
 ### Progreso
 - **% de información para el objetivo:** 100 %
 - **Estado:** resuelto y verificado sobre el build. Falta desplegar.
+
+---
+
+## Objetivo 7 (2026-09-08) — Leer el «ID» del formato nuevo del certificat
+
+**Objetivo / necesidad.** La plantilla de Power Automate añade al final
+`<a>ID: @{triggerBody()?['text_27']}</a>`. Ese ID debe viajar al correo de acostasalcedo,
+con la etiqueta **`ID Facture`** en vez de `N° de facture`, para que no se confundan.
+
+**Rol asumido.** Ingeniero de integración de documentos: el contrato ya no es un formato
+sino **dos**, conviviendo, y el parser es posicional y frágil.
+
+### Preguntas y respuestas
+
+#### P47 — ¿El formato nuevo ya está llegando al buzón? · ✅ Resuelta — NO
+- **Por qué importa:** si ya llegara, un parser que exija el ID sería válido; si no, exigirlo
+  **rompe toda la ingesta** desde el primer correo.
+- **Respuesta:** los **4 certificats más recientes** del buzón son del formato **viejo**,
+  incluido el de hoy 2026-09-09T00:32Z (`j'accepte01_34296`). Ninguno trae la línea `ID:`.
+  → `idFactura` se diseña **opcional**, con warning al log, nunca error.
+  *(Fuente: volcado de la capa de texto de los PDF reales vía Graph, solo lectura.)*
+
+#### P48 — ¿Se puede parsear el ID por posición, como el resto? · ✅ Resuelta — NO
+- **Por qué importa:** todos los demás campos son etiqueta-encima-de-valor y hay helper
+  (`valorDe`) para eso.
+- **Respuesta:** el `<a>ID: …</a>` es **una sola línea**: etiqueta y valor comparten fila, así
+  que `valorDe` no sirve. Se busca por prefijo. **Clave:** hay que **juntar los items de la
+  fila antes de comparar**, porque pdfjs parte el texto en trozos arbitrarios y `ID:` puede
+  llegar separado de su valor. Verificado sobre un PDF renderizado.
+
+#### P49 — ¿El ID que imprimirá la plantilla es realmente un ID? · ⚠️ NO — defecto del cliente
+- **Por qué importa:** determina si el correo dirá algo útil o un dato equivocado.
+- **Respuesta:** **el `<a>` usa `text_27`, el mismo token que «Direction adjointe de service →
+  Nom, Prénom».** Reproducido: se renderizó la plantilla con Chromium (mismo generador,
+  `Producer Skia/PDF`) y el parser devolvió `idFactura: "MARTIN Sophie"` — un nombre de
+  persona. **El arreglo es en Power Automate, fuera de este repo.** Escalado al usuario.
+- ℹ️ Hallazgo colateral: la fila «Direction de service» de la plantilla nueva tiene las
+  celdas **fijas y vacías**, sin ningún token — ese aprobador nunca se rellenará.
+
+#### P50 — ¿Basta con desplegar en Azure para que exista la columna? · ✅ Resuelta — NO
+- **Por qué importa:** el código hace `select: { idFactura: true }`; sin columna, la ruta
+  `repondre` **revienta en runtime**. Desplegar solo el código dejaría la app peor que antes.
+- **Respuesta:** **la app va a Azure, pero la BD está en Railway** (`acela.proxy.rlwy.net`,
+  db `railway`, schema `approbations`) — la trampa ya anotada en MEMORIA. Y el workflow de
+  Azure hace `prisma generate` (solo regenera el cliente TS) y `webapps-deploy`: **nunca**
+  `migrate deploy` ni `db push`. El esquema se aplica siempre a mano.
+- **Aplicado:** `migrate diff` primero para ver el SQL exacto —una sola sentencia,
+  `ALTER TABLE "Factura" ADD COLUMN "idFactura" TEXT;`, aditiva y sin pérdida— y después
+  `db push`. Verificado en `information_schema`: columna `text`, nullable; 25 facturas
+  intactas. Orden seguro: **columna primero, deploy después** (la columna anulable es
+  compatible con el código viejo, así que entre ambos pasos nada se rompe).
+
+### Verificación
+- `tsc --noEmit` y `next build` → exit 0.
+- Bundle del correo: `ID Facture` **1**, `N° de facture` **0**.
+- Parser contra un PDF del **formato nuevo** renderizado: saca el ID y el resto de campos.
+- **Sin regresión** contra los 4 certificats **reales** del buzón: siguen parseando, con el
+  warning del formato viejo.
+
+### Riesgos
+- **Mientras no se corrija `text_27`, el ID guardado será un nombre de persona.** La ingesta
+  funcionará —no es un error técnico—, pero el dato será falso. Solo lo arregla el cliente.
+- Si la plantilla final imprimiera la etiqueta de otra forma (p. ej. `ID :` a la francesa),
+  el regex la sigue cogiendo (`/^ID\s*:\s*(.+)$/i`), pero un cambio mayor la dejaría fuera.
+
+### Progreso
+- **% de información para el objetivo:** 95 % — falta ver un PDF **real** del formato nuevo.
+- **Estado:** código listo y verificado, columna aplicada en Railway.

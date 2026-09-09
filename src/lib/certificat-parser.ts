@@ -20,6 +20,8 @@ export interface AprobadorCertificat {
 
 export interface CertificatData {
   nombreFactura: string;
+  /** Valor de la línea «ID: …» del formato nuevo. Ausente en los PDF viejos. */
+  idFactura?: string;
   projet?: string;
   fournisseur?: string;
   ecole?: string;
@@ -154,6 +156,26 @@ function construirFilas(items: Item[]): Row[] {
 
 function esEtiqueta(str: string): boolean {
   return ETIQUETAS.has(str.trim());
+}
+
+/**
+ * Saca el ID de la línea «ID: …» que el certificat imprime al final (formato nuevo,
+ * 2026-09-08). A diferencia del resto de campos NO es etiqueta-encima-de-valor: va
+ * todo en una misma fila, así que no se busca por posición sino por el prefijo.
+ *
+ * Se juntan los items de la fila antes de comparar porque pdfjs parte el texto en
+ * trozos arbitrarios: «ID:» y su valor pueden llegar como uno o como dos items.
+ */
+function extraerIdFactura(filas: Row[]): string | undefined {
+  for (const fila of filas) {
+    const texto = fila.items.map((i) => i.str).join(" ").trim();
+    const m = texto.match(/^ID\s*:\s*(.+)$/i);
+    if (m) {
+      const valor = m[1].trim();
+      if (valor) return valor;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -320,6 +342,10 @@ export async function parseCertificat(buffer: Buffer): Promise<CertificatResult>
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  // El formato viejo del certificat no trae esta línea: se avisa y se sigue, porque
+  // una ingesta correcta no puede caerse por un campo que aún no todos los PDF traen.
+  const idFactura = extraerIdFactura(filas);
+
   const nombreFactura = valorDe(filas, LABEL_FACTURE);
   if (!nombreFactura) {
     errors.push("N° DE FACTURE introuvable dans le PDF");
@@ -351,12 +377,14 @@ export async function parseCertificat(buffer: Buffer): Promise<CertificatResult>
   if (montantTotal === undefined) warnings.push("MONTANT TOTAL absent ou illisible");
   if (!dateFacture) warnings.push("DATE DE LA FACTURE absente ou illisible");
   if (!fournisseur) warnings.push("Fournisseur absent dans le PDF");
+  if (!idFactura) warnings.push("Ligne «ID:» absente du PDF (ancien format du certificat)");
 
   return {
     ok: true,
     warnings,
     data: {
       nombreFactura: nombreFactura!,
+      idFactura,
       projet: valorDe(filas, LABEL_PROJET),
       fournisseur,
       ecole: valorDe(filas, LABEL_ECOLE),

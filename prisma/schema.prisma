@@ -10,6 +10,10 @@ datasource db {
 model Factura {
   id                      String                @id @default(cuid())
   nombreFactura           String
+  /// ID que imprime el certificat en la linea «ID: …» (formato nuevo, 2026-09-08).
+  /// Opcional a proposito: los PDF del formato viejo no la traen y su ingesta no
+  /// debe fallar por eso. Es lo que se envia en el correo como «ID Facture».
+  idFactura               String?
   noProjet                String
   srmProjet               String?
   // Opcionales: el PDF CertificatCR puede traerlos vacíos. Se completan luego

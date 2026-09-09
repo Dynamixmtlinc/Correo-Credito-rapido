@@ -30,7 +30,18 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-09-08)
+## Estado actual (2026-09-08, tarde)
+
+**Formato nuevo del certificat: se lee la línea «ID: …».** El cliente actualizó la
+plantilla de Power Automate y añadió al final `<a>ID: @{triggerBody()?['text_27']}</a>`.
+Se añade `Factura.idFactura` (opcional), se extrae en el parser y el correo cambia la fila
+`N° de facture` por **`ID Facture`**. Parser probado contra un PDF del formato nuevo
+renderizado con el mismo Chromium, y sin regresión sobre los 4 certificats reales del buzón.
+⚠️ **Bloqueado antes de desplegar**: falta `prisma db push` (la columna no existe en la BD
+de producción; sin ella la ruta `repondre` reventaría) y falta que el cliente resuelva la
+colisión de `text_27` (ver Decisiones). **No desplegar el código sin la columna.**
+
+## Estado anterior (2026-09-08)
 
 **La respuesta del proveedor deja de llevar comentario.** El formulario de `/facture/{n°}`
 se queda en dos botones —«J'accepte» / «Je conteste»— sin caja de texto, y el correo que
@@ -194,6 +205,28 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
     propio idioma, el modelo de datos no se toca.
   - ⚠️ **La chaîne d'approbation no desaparece del sistema**, solo del ojo del proveedor:
     sigue viva en el modelo, en la ingesta y en la vista de admin.
+- **El certificat trae un «ID» nuevo, distinto del n° de factura (cliente, 2026-09-08).**
+  La plantilla nueva imprime al final una línea `ID: <valor>` y **ese** es el dato que el
+  cliente quiere ver en el correo, con la etiqueta **`ID Facture`** — para que nadie lo
+  confunda con el n° de factura, que **no cambia**: sigue siendo `nombreFactura`, lo que se
+  parsea de `N° DE FACTURE` y lo que ve el proveedor en `/facture/{n°}`.
+  - Se guarda en **`Factura.idFactura`, opcional a propósito**: los certificats del formato
+    viejo no traen la línea y su ingesta **no debe fallar** por eso (solo deja un warning
+    en el log). Comprobado: los 4 PDF reales del buzón siguen parseando.
+  - **No es etiqueta-encima-de-valor** como el resto de campos: va todo en una fila, así que
+    `extraerIdFactura()` busca por el prefijo `ID:` y **junta los items de la fila antes de
+    comparar** (pdfjs parte el texto en trozos arbitrarios).
+  - En el correo, la fila `N° de facture` **se sustituye** por `ID Facture`. No se pierde
+    identificación: el n° de factura sigue en el **asunto** y en la frase de apertura.
+    Sin ID, la fila va vacía — rellenarla con el n° de factura sería justo la confusión
+    que se quiere evitar.
+  - ⚠️ **DEFECTO EN LA PLANTILLA DEL CLIENTE, sin resolver:** el `<a>ID: …</a>` usa
+    `@{triggerBody()?['text_27']}`, que es **el mismo token que «Direction adjointe de
+    service → Nom, Prénom»**. Tal cual está, el PDF imprimirá un **nombre de persona** donde
+    debería ir el ID. Reproducido: renderizando la plantilla, el parser devuelve
+    `idFactura: "MARTIN Sophie"`. El arreglo es en Power Automate, no en este repo.
+  - ℹ️ La plantilla nueva también deja la fila «Direction de service» con celdas
+    **fijas y vacías** (sin ningún token): ese aprobador nunca se rellenará.
 - **La respuesta del proveedor NO lleva comentario (cliente, 2026-09-08).** El formulario
   de `/facture/{n°}` son **solo los dos botones**; el correo a acostasalcedo pierde la fila
   `Commentaire`. La respuesta queda reducida a un hecho binario con fecha.

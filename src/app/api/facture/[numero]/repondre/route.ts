@@ -37,6 +37,7 @@ export async function POST(
     select: {
       id: true,
       nombreFactura: true,
+      idFactura: true,
       noProjet: true,
       montant: true,
       responsableEmail: true,
@@ -85,6 +86,7 @@ export async function POST(
     subject: `[${decision === "APPROUVE" ? "J'ACCEPTE" : "JE CONTESTE"}] Facture ${factura.nombreFactura}`,
     bodyHtml: buildReponseHtml({
       nombreFactura: factura.nombreFactura,
+      idFactura: factura.idFactura,
       noProjet: factura.noProjet,
       montant: formatMonto(Number(factura.montant)),
       approuve: decision === "APPROUVE",
@@ -97,6 +99,7 @@ export async function POST(
 
 function buildReponseHtml(p: {
   nombreFactura: string;
+  idFactura: string | null;
   noProjet: string;
   montant: string;
   approuve: boolean;
@@ -120,7 +123,16 @@ function buildReponseHtml(p: {
     <strong>${escapeHtml(p.nombreFactura)}</strong> :
     <strong style="color:${color}">${escapeHtml(reponse)}</strong>.</p>
     <table style="border-collapse:collapse;margin:12px 0">
-      ${ligne("N° de facture", `<strong>${escapeHtml(p.nombreFactura)}</strong>`)}
+      ${/* «ID Facture», no «N° de facture»: son dos cosas distintas y el cliente pidió
+           separarlas para que nadie las confunda (2026-09-08). Aquí va el ID que el
+           certificat imprime en su línea «ID: …»; el n° de factura sigue siendo lo que
+           ve el proveedor en la página, y se lee arriba en la frase de apertura y en el
+           asunto. Sin ID —certificat del formato viejo— la fila queda vacía en vez de
+           rellenarse con el n° de factura, que es justo la confusión a evitar. */ ""}
+      ${ligne(
+        "ID Facture",
+        p.idFactura ? `<strong>${escapeHtml(p.idFactura)}</strong>` : ""
+      )}
       ${ligne("Réponse", `<strong style="color:${color}">${escapeHtml(reponse)}</strong>`)}
       ${ligne("Date de la réponse", escapeHtml(formatDateHeure(p.dateReponse)))}
       ${ligne("Projet", escapeHtml(p.noProjet) || "—")}

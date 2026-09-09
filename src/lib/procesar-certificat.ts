@@ -106,6 +106,7 @@ export async function procesarCertificat(
   }
 
   const campos = {
+    idFactura: data.idFactura,
     noProjet: data.projet ?? "",
     srmProjet: data.projet,
     ecoleId,
