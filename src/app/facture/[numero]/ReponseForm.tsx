@@ -18,15 +18,12 @@ export function ReponseForm({
 }) {
   const router = useRouter();
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [comentario, setComentario] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  // Contestar sin motivo no le sirve a nadie aguas abajo; el backend lo exige igual.
-  // El enum sigue siendo APPROUVE/REFUSE: cambia el texto, no el modelo de datos.
-  const commentaireRequis = decision === "REFUSE";
-  const peutEnvoyer =
-    decision !== null && (!commentaireRequis || comentario.trim().length > 0);
+  // El proveedor solo elige entre «J'accepte» y «Je conteste»: no escribe nada.
+  // El enum sigue siendo APPROUVE/REFUSE: cambió la UI, no el modelo de datos.
+  const peutEnvoyer = decision !== null;
 
   async function envoyer() {
     if (!decision || !peutEnvoyer) return;
@@ -39,7 +36,7 @@ export function ReponseForm({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, comentario: comentario.trim() || undefined }),
+          body: JSON.stringify({ decision }),
         }
       );
 
@@ -127,35 +124,6 @@ export function ReponseForm({
           <X className="w-4 h-4" />
           Je conteste
         </button>
-      </div>
-
-      {/* Comentario */}
-      <div className="mt-4">
-        <label
-          htmlFor="commentaire"
-          className="block text-sm font-medium text-gray-700"
-        >
-          Commentaire{" "}
-          {commentaireRequis ? (
-            <span className="text-red-600">(obligatoire pour une contestation)</span>
-          ) : (
-            <span className="text-gray-400 font-normal">(facultatif)</span>
-          )}
-        </label>
-        <textarea
-          id="commentaire"
-          rows={4}
-          value={comentario}
-          onChange={(e) => setComentario(e.target.value)}
-          disabled={envoi}
-          maxLength={2000}
-          placeholder={
-            commentaireRequis
-              ? "Indiquez le motif de la contestation…"
-              : "Ajoutez une précision si nécessaire…"
-          }
-          className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-csdm-blue focus:border-transparent disabled:bg-gray-50"
-        />
       </div>
 
       {erreur && (

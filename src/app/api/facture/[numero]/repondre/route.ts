@@ -22,20 +22,15 @@ export async function POST(
 
   const body = await req.json().catch(() => null);
   const decision = body?.decision;
-  const comentario =
-    typeof body?.comentario === "string" ? body.comentario.trim() : undefined;
 
   if (decision !== "APPROUVE" && decision !== "REFUSE") {
     return NextResponse.json({ error: "Décision invalide" }, { status: 400 });
   }
 
-  // Une contestation sans motif no le sirve a nadie aguas abajo.
-  if (decision === "REFUSE" && !comentario) {
-    return NextResponse.json(
-      { error: "Un commentaire est obligatoire pour contester la facture" },
-      { status: 400 }
-    );
-  }
+  // El proveedor ya no escribe comentario (cliente, 2026-09-08): la respuesta es solo
+  // «J'accepte» / «Je conteste». Con ello cae la exigencia de motivo para contestar, que
+  // era una de las compensaciones ante la URL adivinable. Si el cuerpo trae `comentario`
+  // —una llamada directa a esta ruta pública—, **se ignora**: no se guarda ni se envía.
 
   const factura = await prisma.factura.findFirst({
     where: { nombreFactura: numero },
@@ -73,7 +68,6 @@ export async function POST(
   const resultado = await registrarRespuestaFournisseur({
     facturaId: factura.id,
     decision,
-    comentario,
     ip,
   });
 
@@ -94,7 +88,6 @@ export async function POST(
       noProjet: factura.noProjet,
       montant: formatMonto(Number(factura.montant)),
       approuve: decision === "APPROUVE",
-      comentario,
       dateReponse: new Date(),
     }),
   }).catch((e) => console.error("[facture/repondre] envoi courriel:", e));
@@ -107,7 +100,6 @@ function buildReponseHtml(p: {
   noProjet: string;
   montant: string;
   approuve: boolean;
-  comentario?: string;
   dateReponse: Date;
 }): string {
   // El correo usa **exactamente** la misma etiqueta que ve el proveedor en la página
@@ -133,20 +125,13 @@ function buildReponseHtml(p: {
       ${ligne("Date de la réponse", escapeHtml(formatDateHeure(p.dateReponse)))}
       ${ligne("Projet", escapeHtml(p.noProjet) || "—")}
       ${ligne("Montant", escapeHtml(p.montant))}
-      ${/* Sin comentario, la fila queda vacía: nada de texto de relleno. Cliente,
-           2026-07-31. Se conserva la fila para que el correo tenga siempre la misma
-           forma y se vea de un vistazo que no se escribió nada. */ ""}
-      ${ligne(
-        "Commentaire",
-        p.comentario ? escapeHtml(p.comentario).replace(/\n/g, "<br/>") : ""
-      )}
     </table>
     <hr/>
     <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>
   `;
 }
 
-/** El comentario lo escribe un tercero sin sesión: nunca se interpola en crudo. */
+/** El n° de factura y el n° de projet vienen del PDF: nunca se interpolan en crudo. */
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

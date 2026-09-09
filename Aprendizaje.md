@@ -760,3 +760,65 @@ cabecera no se tocan), «Date de la saisie» → «Date de réception», y se bo
 ### Progreso
 - **% de información para el objetivo:** 100 %
 - **Estado:** resuelto y typecheck en verde. Falta desplegar.
+
+---
+
+## Objetivo 6 (2026-09-08) — Quitar el comentario de la respuesta del proveedor
+
+**Objetivo / necesidad.** Eliminar el campo `Commentaire` del formulario de `/facture/{n°}`
+y la fila `Commentaire` del correo que se envía a acostasalcedo.
+
+**Rol asumido.** Ingeniero de flujo de aprobación: el reto no es borrar un `<textarea>`,
+es detectar qué reglas de negocio colgaban de ese campo y no dejarlas rotas.
+
+### Preguntas y respuestas
+
+#### P43 — ¿Se puede quitar el campo sin tocar nada más? · ✅ Resuelta — NO
+- **Por qué importa:** si solo se borra el `<textarea>`, «Je conteste» queda **inutilizable**.
+- **Respuesta:** la API exigía motivo para contestar
+  (`if (decision === "REFUSE" && !comentario)` → 400). Sin caja de texto, `comentario` llega
+  siempre vacío y **toda contestación devolvería 400**. Había que quitar las dos cosas a la
+  vez. El formulario tenía además su propio espejo de esa regla (`commentaireRequis`), que
+  bloqueaba el botón de envío: también fuera.
+
+#### P44 — ¿Hay que borrar la columna `comentario` de la base? · ✅ Resuelta — NO
+- **Por qué importa:** borrarla destruiría los motivos de las contestaciones ya recibidas.
+- **Respuesta:** se conserva. `registrarRespuestaFournisseur` ya la tenía opcional
+  (`comentario?: string`), así que basta con dejar de pasarla. Mismo criterio que con
+  «J'accepte / Je conteste»: **cambia la UI, no el modelo**. Las respuestas históricas
+  siguen visibles en el tooltip de la galería del admin y en `ReponseDeja`.
+
+#### P45 — ¿Qué otros «Commentaires» hay en la app y cuáles NO se tocan? · ✅ Resuelta
+- **Por qué importa:** `grep` da 35 coincidencias; tocar de más rompe el flujo del admin.
+- **Respuesta:** son **tres cosas distintas**. Solo se toca la primera:
+  1. **Comentario del proveedor** (`ReponseForm` + `api/facture/[numero]/repondre`) → eliminado.
+  2. `commentairesResponsable` / `commentairesAdmin` (`FacturaForm`, `FacturaDetalle`,
+     `api/facturas`) → **intactos**, son del formulario interno.
+  3. Comentario de la cadena interna (`api/facturas/[id]/aprobar`) → **intacto**, es de los
+     6 aprobadores de la CSDM, otro actor.
+
+#### P46 — ¿Sigue haciendo falta `escapeHtml` en el correo? · ✅ Resuelta — SÍ
+- **Por qué importa:** era «el comentario lo escribe un tercero»; sin comentario parecería
+  código muerto y el impulso es borrarlo.
+- **Respuesta:** sigue necesario. El **n° de factura** y el **n° de projet** vienen del PDF y
+  se interpolan en el HTML; ya ha entrado uno con apóstrofo (`Fact_J'accepte_33689`). Se
+  conservó la función y se corrigió su comentario, que había quedado mintiendo.
+
+### Verificación
+- `tsc --noEmit` → exit 0 · `next build` → exit 0.
+- **Sobre `.next/`** (no solo compilando, según la lección de julio):
+  - `.next/server/app/api/facture/[numero]/repondre/route.js`: `Commentaire` **0**,
+    `obligatoire pour contester` **0**; `Montant` 1 y `Je conteste` 1 → el correo sigue entero.
+  - chunk cliente de `/facture/[numero]`: `Commentaire` **0**, `facultatif` **0**,
+    `Indiquez le motif` **0**; `Je conteste` 1 → los botones siguen.
+- **No se probó un POST real**: escribiría una respuesta falsa y mandaría un correo de
+  verdad (incidente del 2026-07-31). La verificación se queda en el bundle.
+
+### Riesgos
+- **El motivo de una contestación deja de viajar por el sistema.** Contrapartida asumida.
+- **Se pierde una compensación ante la URL adivinable** (rechazo sin motivo denegado);
+  quedan la respuesta única (409) y el registro de IP.
+
+### Progreso
+- **% de información para el objetivo:** 100 %
+- **Estado:** resuelto y verificado sobre el build. Falta desplegar.

@@ -30,7 +30,15 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-09-03)
+## Estado actual (2026-09-08)
+
+**La respuesta del proveedor deja de llevar comentario.** El formulario de `/facture/{n°}`
+se queda en dos botones —«J'accepte» / «Je conteste»— sin caja de texto, y el correo que
+recibe acostasalcedo pierde la fila `Commentaire`. Con ello **cae la exigencia de motivo
+para contestar**. `tsc`, `next build` y verificación sobre `.next/` en verde.
+**Pendiente de desplegar.**
+
+## Estado anterior (2026-09-03)
 
 **La página del proveedor se recorta a 7 campos.** `/facture/{n°}` mostraba 11 campos más
 la cadena de aprobación completa con nombres y decisiones internas. El cliente marcó sobre
@@ -154,9 +162,12 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   cuando el proveedor ya respondió. Por eso **no hacen falta sus emails** ni tokens de acceso.
 - **La URL es deducible a propósito**: acostasalcedo la construye sin esperar a la app, incluso
   antes de que la factura exista (la página muestra "pas encore disponible" en ese caso).
-- Compensaciones ante esa URL adivinable: **una sola respuesta por factura** (409 después),
-  IP guardada como rastro, comentario escapado en el correo, rechazo sin motivo denegado.
-- El proveedor solo **aprueba o rechaza con comentario** — nada de los checks internos.
+- Compensaciones ante esa URL adivinable: **una sola respuesta por factura** (409 después)
+  e **IP guardada como rastro**. ⚠️ *Las otras dos compensaciones ya no existen: el
+  comentario se eliminó el 2026-09-08, y con él el escape de texto de un tercero y el
+  rechazo-sin-motivo-denegado.*
+- El proveedor solo **acepta o contesta** — nada de los checks internos, y desde el
+  2026-09-08 **sin comentario** (ver la regla de abajo).
 - **Vocabulario del proveedor (cliente, 2026-07-31): «J'accepte» / «Je conteste»**, no
   «Approuver / Refuser». Se aplica a los botones, al bloque de factura ya respondida
   («Facture acceptée / contestée»), al correo (`[RÉPONSE ACCEPTÉE]` / `[RÉPONSE CONTESTÉE]`,
@@ -183,6 +194,23 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
     propio idioma, el modelo de datos no se toca.
   - ⚠️ **La chaîne d'approbation no desaparece del sistema**, solo del ojo del proveedor:
     sigue viva en el modelo, en la ingesta y en la vista de admin.
+- **La respuesta del proveedor NO lleva comentario (cliente, 2026-09-08).** El formulario
+  de `/facture/{n°}` son **solo los dos botones**; el correo a acostasalcedo pierde la fila
+  `Commentaire`. La respuesta queda reducida a un hecho binario con fecha.
+  - **Consecuencia obligada: se quitó el comentario obligatorio para «Je conteste».** La API
+    devolvía 400 (`"Un commentaire est obligatoire pour contester la facture"`); sin caja de
+    texto, esa regla dejaba «Je conteste» **inutilizable**. No fue una decisión aparte: era
+    quitar las dos cosas o ninguna.
+  - **El motivo de una contestación ya no viaja por el sistema.** Antes llegaba escrito en
+    el correo; ahora acostasalcedo sabe *que* se contestó, no *por qué*, y tiene que
+    preguntárselo al proveedor por fuera. Contrapartida asumida por el cliente.
+  - **La columna `comentario` de `HistorialAprobacion` se conserva** — cambió la UI, no el
+    modelo. Las respuestas viejas mantienen su texto y se siguen viendo en el tooltip de la
+    galería del admin y en el bloque de factura-ya-respondida de la página pública.
+  - ⚠️ **No confundir con los otros «Commentaires» de la app**, que siguen intactos:
+    `commentairesResponsable` / `commentairesAdmin` del formulario de admin y el comentario
+    de la cadena interna (`facturas/[id]/aprobar`). Solo se tocó el flujo del proveedor.
+  - Si el cuerpo del POST trae `comentario` (llamada directa a la ruta pública), **se ignora**.
 - **La ingesta correcta no envía correo (cliente, 2026-08-17).** El sistema emite **un
   solo correo por factura**: el de la respuesta del fournisseur. El acuse
   `[CRÉÉE]` / `[MISE À JOUR]` que se mandaba al procesar el certificat **se eliminó**
