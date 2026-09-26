@@ -30,7 +30,15 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-09-08, tarde)
+## Estado actual (2026-09-26)
+
+**Por fin se deja de mandar el acuse de ingesta `[CRÉÉE]` / `[MISE À JOUR]`.** El cambio
+estaba escrito y verificado desde el **2026-08-17**, pero **nunca se commiteó**: pasó 40 días
+en el working tree mientras producción seguía mandando los dos correos por factura. Lo
+destapó el cliente al recibir `[EXTERNE]: [CRÉÉE] Facture JA1809`. Ver Lecciones
+("verificado sobre el build" ≠ "desplegado").
+
+## Estado anterior (2026-09-08, tarde)
 
 **Formato nuevo del certificat: se lee la línea «ID: …».** El cliente actualizó la
 plantilla de Power Automate y añadió al final `<a>ID: @{triggerBody()?['text_27']}</a>`.
@@ -69,10 +77,12 @@ una captura qué se queda y qué se va: quedan los 7 de negocio, se va todo lo i
   Comprobado en `sentitems` del buzón admin: **no había duplicación**, eran los dos
   correos por diseño (`T17_32309`, `t14_32175`, `test13_32059`, `13T_32035`,
   `10aug_31866` — todas con el mismo par).
-- ✅ **Quitado el acuse de ingesta** (`src/app/api/webhook/correo/route.ts`): la ingesta
-  correcta ya no escribe a nadie, solo deja traza en el log del servidor. Verificado
+- ✍️ **Escrito el fix del acuse de ingesta** (`src/app/api/webhook/correo/route.ts`): la
+  ingesta correcta ya no escribe a nadie, solo deja traza en el log del servidor. Verificado
   sobre `.next/` tras el build: `transmettre` y `MISE` → 0 ocurrencias; los dos correos
   de fallo siguen ahí.
+  ⚠️ **PERO NO SE COMMITEÓ NI SE DESPLEGÓ HASTA EL 2026-09-26.** Durante esos 40 días esta
+  sección decía "quitado" y producción seguía mandando el acuse. Ver Lecciones.
 
 ## Estado anterior (2026-07-27)
 
@@ -279,6 +289,17 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
 
 ## Lecciones técnicas
 
+- **«Verificado sobre el build» no es «desplegado» — y la memoria puede mentir con las dos
+  cosas en verde.** El 2026-08-17 se quitó el acuse `[CRÉÉE]` / `[MISE À JOUR]`, se comprobó
+  sobre `.next/` y se escribió en MEMORIA como hecho. **Nunca se commiteó.** El cambio
+  sobrevivió 40 días en el working tree —cruzando varias sesiones y hasta un `git stash`
+  durante un rebase— mientras producción seguía mandando dos correos por factura. Lo
+  descubrió el cliente el 2026-09-26 recibiendo `[EXTERNE]: [CRÉÉE] Facture JA1809`.
+  **Regla:** un cambio no está hecho hasta que está en `origin/main` **y** el CI terminó.
+  Al cerrar un bloque, mirar `git status` y no solo el resultado de las pruebas; y al
+  escribir en MEMORIA, distinguir siempre **escrito / commiteado / desplegado**.
+  *(El prefijo `[EXTERNE]:` del asunto lo añade la pasarela de correo de la CSDM, no la app:
+  al buscar el origen de un correo hay que quitarlo antes de hacer grep en el código.)*
 - **Next.js 15 entrega el parámetro de ruta SIN decodificar → un espacio en el n° de factura
   rompe el enlace del proveedor.** Diagnosticado el 2026-09-03 con `Je conteste_03sept_33988`.
   La ingesta la creó bien (proyecto y montante correctos, visible en la galería), pero

@@ -109,11 +109,17 @@ async function processEmailNotification(messageId: string) {
       return;
     }
 
-    await sendAdminEmail({
-      to: [fromEmail],
-      subject: `[${result.creada ? "CRÉÉE" : "MISE À JOUR"}] Facture ${result.nombreFactura}`,
-      bodyHtml: buildSuccessHtml(result.nombreFactura, result.creada, result.warnings),
-    });
+    // **La ingesta correcta NO envía correo.** El único correo que emite el sistema es
+    // el de la respuesta del fournisseur (`[J'ACCEPTE]` / `[JE CONTESTE]`). Antes se
+    // mandaba también un acuse `[CRÉÉE]` / `[MISE À JOUR]` con el enlace, y al
+    // responder una factura acostasalcedo recibía dos correos seguidos. El enlace no
+    // hace falta en un correo: la URL es deducible a propósito (`/facture/{n°}`) y él
+    // ya la construye a mano. Cliente, 2026-08-17.
+    // Los fallos (`[ERREUR]` / `[ERREUR SYSTÈME]`) sí siguen avisando.
+    console.log(
+      `[webhook/correo] Facture ${result.nombreFactura} ${result.creada ? "créée" : "mise à jour"}` +
+        (result.warnings.length ? ` — avis: ${result.warnings.join(" | ")}` : "")
+    );
   } catch (err) {
     console.error("[webhook/correo] Error:", err);
     try {
@@ -130,12 +136,6 @@ async function processEmailNotification(messageId: string) {
   }
 }
 
-/** URL pública que el fournisseur usa para répondre. Debe ser deducible a la main. */
-function urlFacture(nombreFactura: string): string {
-  const base = process.env.NEXTAUTH_URL ?? "";
-  return `${base}/facture/${encodeURIComponent(nombreFactura)}`;
-}
-
 function buildErrorHtml(subject: string, errors: string[]): string {
   const titre = subject
     ? `Le traitement du courriel <strong>${subject}</strong> a échoué :`
@@ -144,32 +144,6 @@ function buildErrorHtml(subject: string, errors: string[]): string {
     <p>${titre}</p>
     <ul style="color:#b91c1c">${errors.map((e) => `<li>${e}</li>`).join("")}</ul>
     <p>Corrigez le document et renvoyez le courriel à <a href="mailto:${process.env.WEBHOOK_ADMIN_EMAIL}">${process.env.WEBHOOK_ADMIN_EMAIL}</a>.</p>
-    <hr/>
-    <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>
-  `;
-}
-
-function buildSuccessHtml(
-  nombreFactura: string,
-  creada: boolean,
-  warnings: string[]
-): string {
-  const link = urlFacture(nombreFactura);
-  const verbe = creada ? "a été créée" : "a été mise à jour";
-
-  const avis =
-    warnings.length > 0
-      ? `<p style="margin-top:16px"><strong>À vérifier :</strong></p>
-         <ul style="color:#b45309;font-size:13px">${warnings
-           .map((w) => `<li>${w}</li>`)
-           .join("")}</ul>`
-      : "";
-
-  return `
-    <p>La facture <strong>${nombreFactura}</strong> ${verbe} dans le système.</p>
-    <p style="margin-top:16px">Lien à transmettre au fournisseur :</p>
-    <p><a href="${link}">${link}</a></p>
-    ${avis}
     <hr/>
     <p style="font-size:12px;color:#6b7280">Système d'approbation de factures</p>
   `;
