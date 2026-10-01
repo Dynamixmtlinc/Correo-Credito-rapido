@@ -36,8 +36,8 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
 bien pero `/facture/Fact%20CR%20J'accepte` decía «pas encore disponible»: el bug latente del
 2026-09-03. Esta vez **se arregla en código** (`numerosDesdeRuta()` en `src/lib/utils.ts`,
 usado en la página y en `repondre`). Verificado con build local (solo GET).
-**Escrito y verificado; pendiente de commit + deploy** (ver Lecciones: no está hecho hasta
-estar en `origin/main` con el CI terminado).
+**Desplegado** (commit `f723549`, CI verde 2026-10-01 14:55Z) y verificado en producción:
+la página muestra la factura y los botones. El POST real de respuesta queda para el proveedor.
 
 ## Estado anterior (2026-09-26)
 

@@ -922,5 +922,6 @@ sino **dos**, conviviendo, y el parser es posicional y frágil.
 - **Revive de paso** `Je conteste_03sept_33988` y `Je conteste_33907` sin tocar la BD.
 
 ### Progreso
-- **% de información para el objetivo:** 100 %. Falta solo commit + deploy + verificar en
-  producción (que el POST real lo haga el proveedor/cliente, no nosotros).
+- **% de información para el objetivo:** 100 %. **Desplegado** (`f723549`, CI verde
+  2026-10-01 14:55Z). Producción: `Fact%20CR%20J'accepte` y `Je%20conteste_33907` ya muestran
+  la factura; `JA21` sin cambios. El POST real lo hará el proveedor/cliente.
