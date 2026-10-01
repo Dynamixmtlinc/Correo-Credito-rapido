@@ -890,3 +890,37 @@ sino **dos**, conviviendo, y el parser es posicional y frágil.
 ### Progreso
 - **% de información para el objetivo:** 95 % — falta ver un PDF **real** del formato nuevo.
 - **Estado:** código listo y verificado, columna aplicada en Railway.
+
+---
+
+## Objetivo 8 (2026-10-01) — «Fact CR J'accepte» no genera la página del proveedor
+
+**Rol:** ingeniero backend / Next.js (diagnóstico de ruteo).
+
+### P51 — ¿Falló la ingesta o la página? · ✅ Resuelta — la página
+- **Respuesta:** la ingesta fue **correcta**: en la BD existe `Fact CR J'accepte` (proyecto
+  321, 5000 $, `idFactura` 36265, creada 2026-10-01 14:06Z). Producción en
+  `/facture/Fact%20CR%20J'accepte` mostraba *«Facture pas encore disponible»*.
+  Es el bug latente del 2026-09-03 (MEMORIA, Lecciones): Next 15 entrega el parámetro
+  **sin decodificar** (`%20`), y `findFirst` no casa con el espacio real de la BD.
+  El `'` no tenía la culpa. (fuente: consulta a la BD + curl a producción)
+
+### P52 — ¿Se vuelve a pedir al cliente que no use espacios? · ✅ Resuelta — no, se arregla en código
+- **Por qué:** la regla «nunca habrá espacios» del 2026-09-03 no se cumplió en origen y cada
+  vez que falla se disfraza de fallo de ingesta. El arreglo es de 1 helper.
+- **Aplicado:** `numerosDesdeRuta()` en `src/lib/utils.ts` (decodifica con try/catch y
+  devuelve `[decodificado, crudo]`), usado en `facture/[numero]/page.tsx` y en
+  `api/facture/[numero]/repondre/route.ts` con `nombreFactura: { in: … }`. El mensaje de
+  «pas encore disponible» también muestra el n° decodificado.
+
+### Verificación
+- `tsc --noEmit` y `next build` → exit 0.
+- Build local, **solo GET** (sin POST contra la BD de producción): `Fact%20CR%20J'accepte`
+  y `Fact%20CR%20J%27accepte` → muestran la factura y los botones; `JA21` sigue igual;
+  `No%20existe` → «pas encore disponible» con «No existe» legible. `bad%zz` → 400 de Next
+  antes de llegar a la página, igual que sin el fix (no es regresión).
+- **Revive de paso** `Je conteste_03sept_33988` y `Je conteste_33907` sin tocar la BD.
+
+### Progreso
+- **% de información para el objetivo:** 100 %. Falta solo commit + deploy + verificar en
+  producción (que el POST real lo haga el proveedor/cliente, no nosotros).

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { registrarRespuestaFournisseur } from "@/lib/procesar-certificat";
 import { sendAdminEmail } from "@/lib/graph-app";
-import { formatMonto, formatDateHeure } from "@/lib/utils";
+import { formatMonto, formatDateHeure, numerosDesdeRuta } from "@/lib/utils";
 import { delaiReponse } from "@/lib/delai-reponse";
 
 /**
@@ -33,7 +33,7 @@ export async function POST(
   // —una llamada directa a esta ruta pública—, **se ignora**: no se guarda ni se envía.
 
   const factura = await prisma.factura.findFirst({
-    where: { nombreFactura: numero },
+    where: { nombreFactura: { in: numerosDesdeRuta(numero) } },
     select: {
       id: true,
       nombreFactura: true,

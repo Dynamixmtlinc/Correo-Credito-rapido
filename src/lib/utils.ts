@@ -219,3 +219,19 @@ export function calcularEstatusGeneral(factura: {
   }
   return EstatusFactura.OUVERT;
 }
+
+/**
+ * Next 15 entrega el parámetro de ruta **sin decodificar**: `/facture/Fact%20CR` llega como
+ * `"Fact%20CR"` y no casa con el `nombreFactura` de la BD, que lleva un espacio real.
+ * Devuelve las formas candidatas para buscar: la decodificada y la cruda (por si un n°
+ * contiene un `%` literal, que además haría lanzar a `decodeURIComponent`).
+ */
+export function numerosDesdeRuta(numero: string): string[] {
+  let decodificado = numero;
+  try {
+    decodificado = decodeURIComponent(numero);
+  } catch {
+    // `%` suelto: nos quedamos con el valor crudo.
+  }
+  return decodificado === numero ? [numero] : [decodificado, numero];
+}

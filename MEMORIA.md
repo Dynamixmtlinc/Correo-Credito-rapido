@@ -30,7 +30,16 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-09-26)
+## Estado actual (2026-10-01)
+
+**Los n° de factura con espacio vuelven a abrir su página.** `Fact CR J'accepte` se ingirió
+bien pero `/facture/Fact%20CR%20J'accepte` decía «pas encore disponible»: el bug latente del
+2026-09-03. Esta vez **se arregla en código** (`numerosDesdeRuta()` en `src/lib/utils.ts`,
+usado en la página y en `repondre`). Verificado con build local (solo GET).
+**Escrito y verificado; pendiente de commit + deploy** (ver Lecciones: no está hecho hasta
+estar en `origin/main` con el CI terminado).
+
+## Estado anterior (2026-09-26)
 
 **Por fin se deja de mandar el acuse de ingesta `[CRÉÉE]` / `[MISE À JOUR]`.** El cambio
 estaba escrito y verificado desde el **2026-08-17**, pero **nunca se commiteó**: pasó 40 días
@@ -314,12 +323,14 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   - **Reproducido en local igual que en producción** → es Next, no Azure ni el proxy.
   - **Solo rompe el espacio**: `Fact_J'accepte_33689` abre bien con `'` crudo y con `%27`.
   - El botón «copier le lien» **no tiene la culpa**: aplica `encodeURIComponent` como debe.
-  - **Decisión del cliente (2026-09-03): los n° de factura nunca llevarán espacios**, se
-    corrige en origen. **No se tocó el código.** Queda latente para cualquier otro carácter
+  - ~~Decisión del cliente (2026-09-03): los n° de factura nunca llevarán espacios~~ —
+    **no se cumplió**: el 2026-10-01 entró `Fact CR J'accepte`. **Corregido en código el
+    2026-10-01** con `numerosDesdeRuta()` (decodifica y busca por `[decodificado, crudo]`).
+    Lo de abajo queda como historia. Queda latente para cualquier otro carácter
     que viaje codificado (acentos, etc.); el arreglo sería `decodeURIComponent` sobre el
     parámetro en la página **y** en `api/facture/[numero]/repondre`.
-  - ⚠️ **Las facturas ya creadas con espacio siguen inaccesibles** (`Je conteste_03sept_33988`,
-    `Je conteste_33907`): hay que renombrarlas en la BD para revivir su enlace.
+  - Las facturas viejas con espacio (`Je conteste_03sept_33988`, `Je conteste_33907`)
+    **reviven con el fix**, sin tocar la BD.
   **Lección de método:** ante un «pas encore disponible», comparar **los bytes** del parámetro
   con los de `nombreFactura` en la BD antes de mirar el buzón.
 - **`AUTH_TRUST_HOST=true` es obligatorio en App Service — y el flag de código NO basta.**

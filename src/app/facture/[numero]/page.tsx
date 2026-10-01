@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { formatMonto, formatDate, formatDateHeure } from "@/lib/utils";
+import { formatMonto, formatDate, formatDateHeure, numerosDesdeRuta } from "@/lib/utils";
 import { ROL_FOURNISSEUR } from "@/lib/procesar-certificat";
 import { delaiReponse, JOURS_POUR_REPONDRE } from "@/lib/delai-reponse";
 import { ReponseForm } from "./ReponseForm";
@@ -16,7 +16,7 @@ export default async function FacturePubliquePage({
   const { numero } = await params;
 
   const factura = await prisma.factura.findFirst({
-    where: { nombreFactura: numero },
+    where: { nombreFactura: { in: numerosDesdeRuta(numero) } },
     include: {
       ecole: { select: { nombre: true } },
       fournisseur: { select: { nombre: true } },
@@ -31,15 +31,16 @@ export default async function FacturePubliquePage({
   // El responsable puede enviar el enlace antes de que el courriel se procese.
   // Es un caso normal, no un error: se explica en vez de dar un 404 seco.
   if (!factura) {
+    const affiche = numerosDesdeRuta(numero)[0];
     return (
-      <Shell titre={numero}>
+      <Shell titre={affiche}>
         <div className="text-center py-10">
           <Clock className="w-10 h-10 text-gray-300 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-gray-800">
             Facture pas encore disponible
           </h2>
           <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
-            La facture <strong>{numero}</strong> n&apos;est pas encore enregistrée dans
+            La facture <strong>{affiche}</strong> n&apos;est pas encore enregistrée dans
             le système. Elle le sera sous peu — veuillez réessayer dans quelques
             minutes en rechargeant cette page.
           </p>
