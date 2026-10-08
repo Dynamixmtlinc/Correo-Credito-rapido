@@ -38,7 +38,13 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   webhook y `scripts/backfill-courriels.mts` (que ahora acepta una fecha `desde`).
 - **Visor del certificat** en `/facture/{n°}`: vista previa embebida + «Ouvrir le PDF», servido
   por la ruta pública `api/facture/[numero]/certificat`.
-- Estado de despliegue y reproceso: ver la línea de abajo (se actualiza al desplegar).
+- **Desplegado** (commit `8c904ff`, CI verde 2026-10-08) y verificado en producción: VJA,
+  MJC y `Fact CR J'accepte` muestran el visor y el PDF se sirve (200, `application/pdf`).
+- **Reprocesados** con el backfill desde 2026-10-02: `VJA` (pageau.v) y `MJC` (recuerda.m)
+  creadas; su plazo de 30 días corre desde el 2026-10-08 (fecha de creación).
+- ⚠️ **El asunto es `{n°}_{ID}`** (`VJA_36385`): la página es `/facture/VJA`, **no**
+  `/facture/VJA_36385` (esa da «pas encore disponible»). Si el enlace del correo automático
+  se arma con el asunto completo, fallará. Pendiente confirmar cómo lo arma el cliente.
 
 ## Estado anterior (2026-10-06)
 
