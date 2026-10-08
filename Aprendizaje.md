@@ -925,3 +925,37 @@ sino **dos**, conviviendo, y el parser es posicional y frágil.
 - **% de información para el objetivo:** 100 %. **Desplegado** (`f723549`, CI verde
   2026-10-01 14:55Z). Producción: `Fact%20CR%20J'accepte` y `Je%20conteste_33907` ya muestran
   la factura; `JA21` sin cambios. El POST real lo hará el proveedor/cliente.
+
+## Objetivo 9 (2026-10-06) — «El enlace del correo no funciona, pero en la app sí se generan»
+
+**Rol:** integrador de sistemas (diagnóstico de ingesta).
+
+### P1 — ¿La app genera la página de todas las facturas que tiene? · ✅ Resuelta
+- **Respuesta:** Sí. Se probaron en producción las 25 facturas más recientes de la BD por
+  `/facture/{nombreFactura}`: todas responden 200 con la factura (formulario, «déjà
+  répondue» o «délai expiré»). Ninguna dice «pas encore disponible». (fuente: BD + curl)
+
+### P2 — Entonces ¿qué solicitud falla? · ✅ Resuelta
+- **Respuesta:** las que **nunca entraron**. El 2026-10-02 llegaron al buzón dos certificats
+  de remitentes **nuevos**: `pageau.v@csdm.qc.ca` (`VJA_36385`, 13:53Z) y
+  `recuerda.m@csdm.qc.ca` (`MJC_36387`, 13:36Z). El webhook solo procesa
+  `REMITENTE_AUTORIZADO = acostasalcedo.d@csdm.qc.ca` (`route.ts:10`, `:76`) y **descarta
+  el resto en silencio** — sin factura, sin correo de error. La última factura en BD es del
+  2026-10-01. Sus URLs dan «pas encore disponible». (fuente: Graph inbox/sentitems + BD)
+
+### P3 — ¿Se amplía la lista de remitentes autorizados? · ⏸ Bloqueada (cliente)
+- **Por qué importa:** es la única puerta de entrada. Opciones: lista explícita de correos,
+  o cualquier `@csdm.qc.ca`. Tras ampliarla hay que **reprocesar** los 2 correos del
+  2026-10-02 (`scripts/backfill-courriels.mts`).
+- También confirmar: ¿el «correo automático» del proveedor usa `/facture/{n° de facture}`?
+  Si usara el **ID** (p. ej. `36265`) tampoco abriría: la página busca por n°, no por ID.
+- **Respuesta (2026-10-08, usuario):** todo el dominio `@csdm.qc.ca`, y además filtrar por
+  asunto que empiece por `SRM_Projet` (el usuario escribió «SRM_Project»; los 67 asuntos
+  reales dicen `SRM_Projet`, se aceptan ambos). ✅ Implementado en `src/lib/ingesta-filtro.ts`.
+
+### P4 — Mostrar el PDF del correo en el formulario del proveedor · ✅ Resuelta
+- **Conflicto:** el PDF trae lo que se quitó de la página el 2026-09-03. El usuario decidió
+  mostrarlo **tal cual** (2026-10-08).
+- **Solución:** ruta pública `api/facture/[numero]/certificat` (inline, `no-store`, solo
+  `Certificat*.pdf`) + bloque con iframe y enlace «Ouvrir le PDF». Las 32 facturas de la BD
+  tienen su `CertificatCR.pdf`. Verificado sobre el build local, solo GET.

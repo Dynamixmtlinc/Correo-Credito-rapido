@@ -30,7 +30,27 @@ Excepción al stack estándar: **este proyecto va sobre Azure, no Railway**.
   (intranet CSDM, solo alcanzable desde el servidor).
 - **Data layer cliente**: TanStack Query + TanStack Table; formularios con react-hook-form + zod.
 
-## Estado actual (2026-10-01)
+## Estado actual (2026-10-08)
+
+**Ingesta abierta a todo `@csdm.qc.ca` + el proveedor ve el certificat en PDF.**
+- **Remitentes**: se procesa cualquier `@csdm.qc.ca` (dominio exacto) cuyo asunto empiece por
+  `SRM_Projet` (o `SRM_Project`). Lógica en `src/lib/ingesta-filtro.ts`, compartida por el
+  webhook y `scripts/backfill-courriels.mts` (que ahora acepta una fecha `desde`).
+- **Visor del certificat** en `/facture/{n°}`: vista previa embebida + «Ouvrir le PDF», servido
+  por la ruta pública `api/facture/[numero]/certificat`.
+- Estado de despliegue y reproceso: ver la línea de abajo (se actualiza al desplegar).
+
+## Estado anterior (2026-10-06)
+
+**Han empezado a enviar certificats otras personas y la app los descarta en silencio.**
+El 2026-10-02 llegaron `VJA_36385` (de `pageau.v@csdm.qc.ca`) y `MJC_36387` (de
+`recuerda.m@csdm.qc.ca`). El webhook solo acepta `acostasalcedo.d@csdm.qc.ca`, así que
+**no se creó ninguna factura ni se mandó ningún correo de error**, y sus enlaces dicen «pas encore
+disponible». Las facturas que sí están en la BD abren todas (comprobadas las 25 últimas en
+producción). **Pendiente de decisión del cliente:** ampliar los remitentes autorizados y
+reprocesar esos 2 correos. Detalle en `Aprendizaje.md` § Objetivo 9.
+
+## Estado anterior (2026-10-01)
 
 **Los n° de factura con espacio vuelven a abrir su página.** `Fact CR J'accepte` se ingirió
 bien pero `/facture/Fact%20CR%20J'accepte` decía «pas encore disponible»: el bug latente del
@@ -168,8 +188,17 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
   Estados aprobador: `VACIO / EN_COURS / APPROUVE / REFUSE`.
 - **Documentos en la base de datos**, no en Blob Storage. Decisión tomada durante el
   desarrollo (existe `azure-blob.ts` del diseño original, quedó sin uso).
-- **Ingesta por correo**: solo se procesan mensajes del remitente autorizado
-  `acostasalcedo.d@csdm.qc.ca` (hardcodeado en `src/app/api/webhook/correo/route.ts:14`).
+- **Ingesta por correo (cliente, 2026-10-08)**: se procesa **cualquier remitente
+  `@csdm.qc.ca`** (dominio exacto, no subdominios ni parecidos) **y solo si el asunto empieza
+  por `SRM_Projet`** (se acepta también `SRM_Project`). Antes era solo
+  `acostasalcedo.d@csdm.qc.ca`; empezaron a enviar pageau.v y recuerda.m y sus certificats
+  se descartaban en silencio. El filtro de asunto es obligatorio: los mismos remitentes
+  mandan al buzón correspondencia con PDF (registro de fournisseurs) que, sin él, daría
+  `[ERREUR]`. Los 67 certificats históricos cumplen el patrón. Fuera de filtro → se ignora
+  en silencio. Lógica en `src/lib/ingesta-filtro.ts`.
+  - La respuesta del proveedor va a `Factura.responsableEmail` = **quien envió el
+    certificat**, así que cada persona recibe la respuesta de sus propias facturas.
+  - `[ERREUR SYSTÈME]` antes de leer el remitente sigue yendo a acostasalcedo.
   El webhook valida con `clientState === WEBHOOK_SECRET` y responde 202 en <30s como exige Graph.
 - **Toda la UI en francés**; los identificadores del código en español/francés mezclados
   (`nombreFactura`, `noProjet`, `dateSaisie`). Es intencional, no unificar sin avisar.
@@ -224,6 +253,14 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
     propio idioma, el modelo de datos no se toca.
   - ⚠️ **La chaîne d'approbation no desaparece del sistema**, solo del ojo del proveedor:
     sigue viva en el modelo, en la ingesta y en la vista de admin.
+  - ⚠️ **Excepción decidida el 2026-10-08: el PDF del certificat se muestra TAL CUAL** en
+    la página (visor + «Ouvrir le PDF»), y el PDF **sí trae** la chaîne d'approbation,
+    indice comptable, etc. El usuario lo decidió sabiendo que contradice el recorte del
+    2026-09-03. Solo se sirve el documento `Certificat*.pdf` de la ingesta
+    (`whereCertificat()` en `db-storage.ts`), nunca otros documentos subidos en la app.
+  - ⚠️ El PDF se guarda **una sola vez** (el de la primera ingesta): si se reenvía el
+    certificat con cambios, la factura se actualiza pero el PDF que ve el proveedor es el
+    viejo.
 - **El certificat trae un «ID» nuevo, distinto del n° de factura (cliente, 2026-09-08).**
   La plantilla nueva imprime al final una línea `ID: <valor>` y **ese** es el dato que el
   cliente quiere ver en el correo, con la etiqueta **`ID Facture`** — para que nadie lo
@@ -333,6 +370,10 @@ paso, costos ~$133 CAD/mes), `.azure/provision.sh`.
     **reviven con el fix**, sin tocar la BD.
   **Lección de método:** ante un «pas encore disponible», comparar **los bytes** del parámetro
   con los de `nombreFactura` en la BD antes de mirar el buzón.
+- **Un «pas encore disponible» puede ser también un remitente no autorizado** (2026-10-06).
+  El filtro de `REMITENTE_AUTORIZADO` descarta sin dejar rastro ni avisar: el certificat está
+  en el inbox y no hay nada en `sentitems`. Orden de diagnóstico: ¿la factura está en la BD?
+  → si no, mirar en el **inbox** quién envió el correo (no solo `sentitems`).
 - **`AUTH_TRUST_HOST=true` es obligatorio en App Service — y el flag de código NO basta.**
   Sin confiar en el host, NextAuth v5 lanza `UntrustedHost` y **todos** los endpoints
   `/api/auth/*` devuelven 500 con un mensaje genérico de "server configuration" que no dice
@@ -490,4 +531,4 @@ Prioridad media:
 Preguntas abiertas para el cliente/Deyby:
 - ¿El sistema arranca en el tenant de CSDM o se queda en dynamixmtl como piloto?
 - ¿Quién administra la cuenta que recibe los correos (`WEBHOOK_ADMIN_EMAIL`) en producción?
-- ¿Se mantiene el remitente único autorizado o habrá varios usuarios enviando facturas?
+- ~~¿Se mantiene el remitente único autorizado?~~ → todo `@csdm.qc.ca` + asunto `SRM_Projet` (2026-10-08).

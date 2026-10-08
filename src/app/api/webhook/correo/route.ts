@@ -5,9 +5,10 @@ import {
   sendAdminEmail,
 } from "@/lib/graph-app";
 import { procesarCertificat } from "@/lib/procesar-certificat";
+import { esAsuntoCertificat, esRemitenteAutorizado } from "@/lib/ingesta-filtro";
 
-// Solo se procesan correos de este remitente autorizado
-const REMITENTE_AUTORIZADO = "acostasalcedo.d@csdm.qc.ca";
+// A quién avisar de un `[ERREUR SYSTÈME]` si el fallo ocurre antes de saber el remitente.
+const AVISO_POR_DEFECTO = "acostasalcedo.d@csdm.qc.ca";
 
 /**
  * Devuelve el token de validación tal cual, en texto plano.
@@ -66,18 +67,19 @@ export async function POST(req: NextRequest) {
 }
 
 async function processEmailNotification(messageId: string) {
-  let fromEmail = REMITENTE_AUTORIZADO;
+  let fromEmail = AVISO_POR_DEFECTO;
 
   try {
     const message = await getAdminMessage(messageId);
     fromEmail = message.from.emailAddress.address.toLowerCase();
 
-    // Ignorar correos de remitentes no autorizados
-    if (fromEmail !== REMITENTE_AUTORIZADO.toLowerCase()) return;
+    // Solo remitentes @csdm.qc.ca y solo asuntos `SRM_Projet …`; el resto se ignora
+    // en silencio, porque los mismos remitentes envían correos que no son facturas.
+    if (!esRemitenteAutorizado(fromEmail)) return;
+    if (!esAsuntoCertificat(message.subject)) return;
 
     // El PDF adjunto es la fuente de verdad: el asunto y el cuerpo del correo no
-    // contienen los datos de la factura. Sin PDF no hay nada que procesar — y no se
-    // avisa, porque el mismo remitente envía correos que no son facturas.
+    // contienen los datos de la factura. Sin PDF no hay nada que procesar.
     if (!message.hasAttachments) return;
 
     const attachments = await getMessageAttachments(messageId);
@@ -122,6 +124,8 @@ async function processEmailNotification(messageId: string) {
     );
   } catch (err) {
     console.error("[webhook/correo] Error:", err);
+    // Nunca contestar a un remitente de fuera del dominio.
+    if (!esRemitenteAutorizado(fromEmail)) return;
     try {
       await sendAdminEmail({
         to: [fromEmail],

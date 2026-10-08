@@ -52,3 +52,17 @@ export async function storeAdjuntoTemporal(
     },
   });
 }
+
+/**
+ * Criterio del `CertificatCR.pdf` de una factura, para la página pública del proveedor.
+ * Solo el certificat de la ingesta (nombre `Certificat*`, tipo PDF), nunca otro
+ * documento subido desde la app. Ordenar por `createdAt asc`: el más antiguo es el
+ * que guardó la ingesta.
+ */
+export function whereCertificat(nombresFactura: string[]) {
+  return {
+    factura: { nombreFactura: { in: nombresFactura } },
+    contentType: "application/pdf",
+    nombre: { startsWith: "Certificat", mode: "insensitive" as const },
+  };
+}

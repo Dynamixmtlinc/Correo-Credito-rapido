@@ -2,8 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { formatMonto, formatDate, formatDateHeure, numerosDesdeRuta } from "@/lib/utils";
 import { ROL_FOURNISSEUR } from "@/lib/procesar-certificat";
 import { delaiReponse, JOURS_POUR_REPONDRE } from "@/lib/delai-reponse";
+import { whereCertificat } from "@/lib/db-storage";
 import { ReponseForm } from "./ReponseForm";
-import { FileText, Clock, Check, X, CalendarX } from "lucide-react";
+import { FileText, Clock, Check, X, CalendarX, ExternalLink } from "lucide-react";
 
 // Ruta pública sin sesión: la URL la construye a mano el responsable.
 export const dynamic = "force-dynamic";
@@ -49,6 +50,12 @@ export default async function FacturePubliquePage({
     );
   }
 
+  // Solo se comprueba que exista: el PDF lo sirve `api/facture/[numero]/certificat`.
+  const certificat = await prisma.documento.findFirst({
+    where: whereCertificat([factura.nombreFactura]),
+    select: { id: true },
+  });
+
   const respuesta = factura.historialAprobacion[0] ?? null;
   // El plazo corre desde que se procesó el correo y no se mueve aunque la factura
   // se actualice después. Ver `src/lib/delai-reponse.ts`.
@@ -81,6 +88,12 @@ export default async function FacturePubliquePage({
         <Champ label="Fournisseur" valeur={factura.fournisseur?.nombre ?? "—"} />
         <Champ label="École" valeur={factura.ecole?.nombre ?? "—"} />
       </div>
+
+      {certificat && (
+        <Certificat
+          url={`/api/facture/${encodeURIComponent(factura.nombreFactura)}/certificat`}
+        />
+      )}
 
       {/* Respuesta */}
       <div className="mt-8 pt-6 border-t">
@@ -151,6 +164,37 @@ function Champ({
       >
         {valeur}
       </dd>
+    </div>
+  );
+}
+
+/**
+ * El `CertificatCR.pdf` que llegó por correo, tal cual (usuario, 2026-10-08). Vista
+ * previa embebida + enlace para abrirlo aparte: en móvil el visor embebido suele
+ * mostrar solo la primera página, o nada.
+ */
+function Certificat({ url }: { url: string }) {
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-wide text-gray-500 font-medium">
+          Certificat de la facture
+        </h2>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-sm font-medium text-csdm-blue hover:underline"
+        >
+          Ouvrir le PDF
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      </div>
+      <iframe
+        src={url}
+        title="Certificat de la facture"
+        className="w-full h-[70vh] min-h-[420px] rounded-lg border border-gray-200 bg-gray-50"
+      />
     </div>
   );
 }
